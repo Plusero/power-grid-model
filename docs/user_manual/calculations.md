@@ -77,15 +77,17 @@ Output:
 
 ##### Analytical output uncertainty
 
-Iterative-linear state estimation can also calculate approximate standard deviations for its estimated outputs:
+Iterative-linear and Newton-Raphson state estimation can also calculate approximate standard deviations for their
+estimated outputs. The following uses Newton-Raphson; replace the calculation method with `"iterative_linear"` to use
+the iterative-linear formulation.
 
-See the
-[Iterative-Linear State Estimation UQ Example](../examples/Iterative%20Linear%20State%20Estimation%20UQ%20Example.ipynb)
-for a complete runnable example.
+See also the
+[State Estimation UQ Example](../examples/State%20Estimation%20UQ%20Example.ipynb) for a complete runnable comparison of
+both methods through the same public API.
 
 ```python
 result = model.calculate_state_estimation(
-    calculation_method="iterative_linear",
+    calculation_method="newton_raphson",
     calculate_uncertainty=True,
 )
 ```
@@ -103,21 +105,29 @@ deviations are in radians. In an asymmetric calculation, each value contains one
 no `s_sigma` output because active- and reactive-power uncertainty is reported separately.
 
 `calculate_uncertainty` defaults to `False`. The sigma attributes remain present in the output schema, but their values
-are `NaN` when uncertainty calculation is not requested. The option is currently supported only with
-`calculation_method="iterative_linear"`; requesting it with Newton-Raphson state estimation raises an error.
+are `NaN` when uncertainty calculation is not requested. The option is supported with both
+`calculation_method="iterative_linear"` and `calculation_method="newton_raphson"`.
 
-These standard deviations describe the final, fixed local iterative-linear model. They use first-order propagation for
-voltage and current magnitudes and for active and reactive power, and assume that the effective complex voltage error is
-proper (circular), so its pseudo-covariance is zero. They do not include the uncertainty of the preceding iterative
-measurement transformations. See
-[State Estimate Output Uncertainty](../algorithms/se-algorithms.md#state-estimate-output-uncertainty) for details.
+The two methods use different analytical models and can therefore produce different sigmas. Iterative-linear UQ uses
+PGM's adopted proper (circular) complex-voltage error model, including its factor of $1/2$ for real marginals.
+Newton-Raphson UQ instead uses a real polar voltage-state covariance from a Gauss-Newton matrix rebuilt at the returned
+state; ordinary real first-order propagation applies, without the proper-complex assumption or factor of $1/2$. See the
+[iterative-linear formulation](../algorithms/se-algorithms.md#state-estimate-output-uncertainty) and the
+[Newton-Raphson formulation](../algorithms/se-algorithms.md#newton-raphson-output-uncertainty) for details.
+
+Both results are local analytical approximations conditional on the final network, processed measurements, and voltage
+reference. They assume independent processed measurement channels and do not include nonlinear curvature, model or
+topology uncertainty, bad-data selection, or uncertainty in the preceding iteration.
 
 If no voltage-angle measurement is present, voltage angles and their standard deviations use phase A of the slack bus
-as their reference. The slack phase-A `u_angle_sigma` is therefore zero.
+as their reference. The slack phase-A `u_angle_sigma` is therefore zero. Newton-Raphson UQ first removes the artificial
+noise contribution of its deterministic virtual-angle rows and then projects the covariance to this reported reference.
 
 ```{warning}
 Current-magnitude linearization is undefined at zero current. `i_from_sigma`, `i_to_sigma`, or the corresponding
 three-terminal field is therefore `NaN` when the estimated terminal current is zero.
+
+Voltage magnitude and angle sigmas are unavailable at zero estimated voltage and are therefore `NaN`.
 
 Uncertainty calculation raises `SparseMatrixError` when numerical LU pivot perturbation is required. The selected
 inverse is not valid for a numerically perturbed factorization.

@@ -787,11 +787,12 @@ class PowerGridModel:
                 calculation method is iterative.
             max_iterations (int, optional): Maximum number of iterations, applicable only when the calculation method
                 is iterative.
-            calculation_method (an enumeration): Use iterative linear method.
+            calculation_method (an enumeration): State-estimation method. Iterative linear is the default;
+                Newton-Raphson is also supported.
             calculate_uncertainty (bool, optional): Calculate first-order analytical standard deviations for node
                 voltage magnitude and angle, nodal active/reactive injection, and branch current and active/reactive
-                power. This is currently supported only by the iterative-linear method and uses PGM's adopted proper
-                complex-error model. Defaults to False.
+                power. Iterative linear and Newton-Raphson use their respective local covariance models. Defaults to
+                False.
             update_data (dict, optional):
                 None: Calculate state estimation once with the current model attributes.
 

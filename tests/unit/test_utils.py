@@ -9,13 +9,14 @@ from unittest.mock import MagicMock, mock_open, patch
 import numpy as np
 import pytest
 
-from power_grid_model import DatasetType, initialize_array
+from power_grid_model import CalculationMethod, DatasetType, PowerGridModel, initialize_array
 from power_grid_model._core.dataset_definitions import AttributeType as AT, ComponentType as CT
 from power_grid_model._core.power_grid_meta import power_grid_meta_data
 from power_grid_model.data_types import Dataset
 from power_grid_model.utils import (
     LICENSE_TEXT,
     _make_test_case,
+    create_state_estimation_monte_carlo_updates,
     get_component_batch_size,
     get_dataset_batch_size,
     get_dataset_scenario,
@@ -25,6 +26,8 @@ from power_grid_model.utils import (
     msgpack_serialize_to_file,
     self_test,
 )
+
+from .utils import DATA_PATH, import_case_data
 
 
 def test_get_dataset_scenario():
@@ -47,6 +50,166 @@ def test_get_dataset_scenario():
 
     with pytest.raises(IndexError):
         get_dataset_scenario(data, 2)
+
+
+@pytest.mark.parametrize("n_samples", [0, -1, 1.5, True])
+def test_create_state_estimation_monte_carlo_updates_rejects_invalid_sample_count(n_samples):
+    with pytest.raises(ValueError, match="positive integer"):
+        create_state_estimation_monte_carlo_updates({}, n_samples)
+
+
+def test_create_state_estimation_monte_carlo_updates_requires_sensors():
+    with pytest.raises(ValueError, match="no state-estimation sensors"):
+        create_state_estimation_monte_carlo_updates({}, 2)
+
+
+def test_create_state_estimation_monte_carlo_updates_samples_voltage_magnitude_and_angle():
+    node = initialize_array(DatasetType.input, CT.node, 2)
+    node[AT.id] = [1, 2]
+    node[AT.u_rated] = [10_000.0, 20_000.0]
+
+    sensor = initialize_array(DatasetType.input, CT.asym_voltage_sensor, 2)
+    sensor[AT.id] = [11, 12]
+    sensor[AT.measured_object] = [1, 2]
+    sensor[AT.u_measured] = [[5_700.0, 5_800.0, 5_900.0], [11_400.0, 11_500.0, 11_600.0]]
+    sensor[AT.u_angle_measured] = [[0.0, -2.0, 2.0], [np.nan, np.nan, np.nan]]
+    sensor[AT.u_sigma] = [30.0, 60.0]
+
+    n_samples = 3
+    seed = 7
+    updates = create_state_estimation_monte_carlo_updates(
+        {CT.node: node, CT.asym_voltage_sensor: sensor}, n_samples, seed=seed
+    )
+    voltage_updates = updates[CT.asym_voltage_sensor]
+
+    rng = np.random.default_rng(seed)
+    expected_magnitude = rng.normal(
+        loc=sensor[AT.u_measured],
+        scale=sensor[AT.u_sigma][:, np.newaxis],
+        size=(n_samples, *sensor[AT.u_measured].shape),
+    )
+    angle_sigma = sensor[AT.u_sigma] / (node[AT.u_rated] / np.sqrt(3.0))
+    expected_angle = rng.normal(
+        loc=sensor[AT.u_angle_measured],
+        scale=angle_sigma[:, np.newaxis],
+        size=(n_samples, *sensor[AT.u_angle_measured].shape),
+    )
+
+    np.testing.assert_allclose(voltage_updates[AT.u_measured], expected_magnitude)
+    np.testing.assert_allclose(voltage_updates[AT.u_angle_measured], expected_angle, equal_nan=True)
+    assert np.all(np.isnan(voltage_updates[AT.u_angle_measured][:, 1]))
+
+
+def test_create_state_estimation_monte_carlo_updates_supports_columnar_voltage_data_without_angle():
+    node = initialize_array(DatasetType.input, CT.node, 1)
+    node[AT.id] = [1]
+    node[AT.u_rated] = [10_000.0]
+    sensor = initialize_array(DatasetType.input, CT.sym_voltage_sensor, 1)
+    sensor[AT.measured_object] = [1]
+    sensor[AT.u_measured] = [10_100.0]
+    sensor[AT.u_sigma] = [20.0]
+    columnar_input = {
+        CT.node: {attribute: node[attribute] for attribute in node.dtype.names},
+        CT.sym_voltage_sensor: {attribute: sensor[attribute] for attribute in sensor.dtype.names},
+    }
+
+    updates = create_state_estimation_monte_carlo_updates(columnar_input, 2, seed=3)
+
+    voltage_updates = updates[CT.sym_voltage_sensor]
+    assert voltage_updates.shape == (2, 1)
+    assert np.all(np.isfinite(voltage_updates[AT.u_measured]))
+    assert np.all(np.isnan(voltage_updates[AT.u_angle_measured]))
+
+
+def test_create_state_estimation_monte_carlo_updates_requires_nodes_for_voltage_angles():
+    sensor = initialize_array(DatasetType.input, CT.sym_voltage_sensor, 1)
+    sensor[AT.u_measured] = [10_000.0]
+    sensor[AT.u_angle_measured] = [0.0]
+    sensor[AT.u_sigma] = [10.0]
+
+    with pytest.raises(ValueError, match="requires node"):
+        create_state_estimation_monte_carlo_updates({CT.sym_voltage_sensor: sensor}, 1)
+
+
+def test_create_state_estimation_monte_carlo_updates_rejects_unknown_voltage_node():
+    node = initialize_array(DatasetType.input, CT.node, 1)
+    node[AT.id] = [1]
+    node[AT.u_rated] = [10_000.0]
+    sensor = initialize_array(DatasetType.input, CT.sym_voltage_sensor, 1)
+    sensor[AT.measured_object] = [99]
+    sensor[AT.u_measured] = [10_000.0]
+    sensor[AT.u_angle_measured] = [0.0]
+    sensor[AT.u_sigma] = [10.0]
+
+    with pytest.raises(ValueError, match="unknown node 99"):
+        create_state_estimation_monte_carlo_updates({CT.node: node, CT.sym_voltage_sensor: sensor}, 1)
+
+
+def test_create_state_estimation_monte_carlo_updates_samples_power_sigma_variants():
+    sym_sensor = initialize_array(DatasetType.input, CT.sym_power_sensor, 2)
+    sym_sensor[AT.p_measured] = [100.0, 200.0]
+    sym_sensor[AT.q_measured] = [10.0, 20.0]
+    sym_sensor[AT.power_sigma] = [np.nan, 14.0]
+    sym_sensor[AT.p_sigma] = [2.0, np.nan]
+    sym_sensor[AT.q_sigma] = [3.0, np.nan]
+
+    asym_sensor = initialize_array(DatasetType.input, CT.asym_power_sensor, 1)
+    asym_sensor[AT.p_measured] = [[1.0, 2.0, 3.0]]
+    asym_sensor[AT.q_measured] = [[4.0, 5.0, 6.0]]
+    asym_sensor[AT.power_sigma] = [np.sqrt(2.0)]
+
+    n_samples = 2
+    seed = 9
+    updates = create_state_estimation_monte_carlo_updates(
+        {CT.sym_power_sensor: sym_sensor, CT.asym_power_sensor: asym_sensor}, n_samples, seed=seed
+    )
+
+    rng = np.random.default_rng(seed)
+    expected_sym_p = rng.normal(sym_sensor[AT.p_measured], [2.0, 14.0 / np.sqrt(2.0)], (n_samples, 2))
+    expected_sym_q = rng.normal(sym_sensor[AT.q_measured], [3.0, 14.0 / np.sqrt(2.0)], (n_samples, 2))
+    expected_asym_p = rng.normal(asym_sensor[AT.p_measured], 1.0, (n_samples, 1, 3))
+    expected_asym_q = rng.normal(asym_sensor[AT.q_measured], 1.0, (n_samples, 1, 3))
+
+    np.testing.assert_allclose(updates[CT.sym_power_sensor][AT.p_measured], expected_sym_p)
+    np.testing.assert_allclose(updates[CT.sym_power_sensor][AT.q_measured], expected_sym_q)
+    np.testing.assert_allclose(updates[CT.asym_power_sensor][AT.p_measured], expected_asym_p)
+    np.testing.assert_allclose(updates[CT.asym_power_sensor][AT.q_measured], expected_asym_q)
+
+
+def test_create_state_estimation_monte_carlo_updates_samples_current_polar_coordinates():
+    sensor = initialize_array(DatasetType.input, CT.asym_current_sensor, 1)
+    sensor[AT.i_measured] = [[10.0, 20.0, 30.0]]
+    sensor[AT.i_angle_measured] = [[0.1, 0.2, 0.3]]
+    sensor[AT.i_sigma] = [0.5]
+    sensor[AT.i_angle_sigma] = [0.01]
+
+    n_samples = 2
+    seed = 11
+    updates = create_state_estimation_monte_carlo_updates({CT.asym_current_sensor: sensor}, n_samples, seed=seed)
+
+    rng = np.random.default_rng(seed)
+    expected_magnitude = rng.normal(sensor[AT.i_measured], 0.5, (n_samples, 1, 3))
+    expected_angle = rng.normal(sensor[AT.i_angle_measured], 0.01, (n_samples, 1, 3))
+    current_updates = updates[CT.asym_current_sensor]
+    np.testing.assert_allclose(current_updates[AT.i_measured], expected_magnitude)
+    np.testing.assert_allclose(current_updates[AT.i_angle_measured], expected_angle)
+
+
+@pytest.mark.parametrize("calculation_method", [CalculationMethod.iterative_linear, CalculationMethod.newton_raphson])
+def test_state_estimation_accepts_monte_carlo_updates(calculation_method):
+    input_data = import_case_data(
+        DATA_PATH / "state_estimation" / "1os2msr", calculation_type="state_estimation", sym=True
+    )[DatasetType.input]
+    n_samples = 4
+    updates = create_state_estimation_monte_carlo_updates(input_data, n_samples, seed=42)
+
+    result = PowerGridModel(input_data).calculate_state_estimation(
+        calculation_method=calculation_method,
+        update_data=updates,
+    )
+
+    assert result[CT.node].shape[0] == n_samples
+    assert np.all(np.isfinite(result[CT.node][AT.u]))
 
 
 def test_get_data_set_batch_size():

@@ -105,7 +105,7 @@ PGM_API void PGM_set_max_iter(PGM_Handle* handle, PGM_Options* opt, PGM_Idx max_
 PGM_API void PGM_set_threading(PGM_Handle* handle, PGM_Options* opt, PGM_Idx threading) PGM_NOEXCEPT;
 
 /**
- * @brief Enable analytical uncertainty quantification for iterative-linear state estimation.
+ * @brief Enable analytical uncertainty quantification for iterative-linear or Newton-Raphson state estimation.
  *
  * @param handle
  * @param opt The pointer to the option instance.

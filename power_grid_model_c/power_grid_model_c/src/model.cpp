@@ -120,9 +120,9 @@ void check_calculate_valid_options(PGM_Options const& opt) {
     }
     if (opt.calculate_uncertainty == 1 &&
         (opt.calculation_type != PGM_state_estimation ||
-         (opt.calculation_method != PGM_default_method && opt.calculation_method != PGM_iterative_linear))) {
-        throw InvalidArguments{"PGM_calculate",
-                               "calculate_uncertainty is supported only for iterative-linear state estimation"};
+         (opt.calculation_method != PGM_default_method && opt.calculation_method != PGM_iterative_linear &&
+          opt.calculation_method != PGM_newton_raphson))) {
+        throw InvalidArguments{"PGM_calculate", "calculate_uncertainty is supported only for state estimation"};
     }
 }
 

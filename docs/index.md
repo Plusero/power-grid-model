@@ -106,7 +106,7 @@ api_reference/power-grid-model-c-api-reference
 examples/Power Flow Example.ipynb
 examples/Serialization Example.ipynb
 examples/State Estimation Example.ipynb
-examples/Iterative Linear State Estimation UQ Example.ipynb
+examples/State Estimation UQ Example.ipynb
 examples/Short Circuit Example.ipynb
 examples/Multi-dimensional batch calculation example.ipynb
 examples/Validation Examples.ipynb
