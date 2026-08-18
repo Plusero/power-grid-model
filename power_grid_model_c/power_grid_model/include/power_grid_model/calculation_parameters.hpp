@@ -48,6 +48,15 @@ struct BusSolverOutput {
     LimitViolation q_limit_violated{LimitViolation::none};
 };
 
+template <symmetry_tag sym_type> struct BusUncertaintyOutput {
+    using sym = sym_type;
+
+    RealValue<sym> u_sigma{nan};
+    RealValue<sym> u_angle_sigma{nan};
+    RealValue<sym> p_sigma{nan};
+    RealValue<sym> q_sigma{nan};
+};
+
 template <symmetry_tag sym_type> struct BranchSolverOutput {
     using sym = sym_type;
 
@@ -55,6 +64,12 @@ template <symmetry_tag sym_type> struct BranchSolverOutput {
     ComplexValue<sym> s_t{};
     ComplexValue<sym> i_f{};
     ComplexValue<sym> i_t{};
+    RealValue<sym> p_f_sigma{nan};
+    RealValue<sym> q_f_sigma{nan};
+    RealValue<sym> i_f_sigma{nan};
+    RealValue<sym> p_t_sigma{nan};
+    RealValue<sym> q_t_sigma{nan};
+    RealValue<sym> i_t_sigma{nan};
 };
 
 template <symmetry_tag sym_type> struct BranchShortCircuitSolverOutput {
@@ -342,6 +357,7 @@ template <symmetry_tag sym_type> struct SolverOutput {
     std::vector<ComplexValue<sym>> u;
     std::vector<ComplexValue<sym>> bus_injection; // TODO(mgovers): remove this for v2
     std::vector<BusSolverOutput> bus;
+    std::vector<BusUncertaintyOutput<sym>> bus_uncertainty{};
     std::vector<BranchSolverOutput<sym>> branch;
     std::vector<ApplianceSolverOutput<sym>> source;
     std::vector<ApplianceSolverOutput<sym>> shunt;

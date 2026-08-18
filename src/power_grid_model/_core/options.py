@@ -42,6 +42,7 @@ class Options:
     error_tolerance = OptionSetter(get_pgc().set_err_tol)
     max_iterations = OptionSetter(get_pgc().set_max_iter)
     threading = OptionSetter(get_pgc().set_threading)
+    calculate_uncertainty = OptionSetter(get_pgc().set_calculate_uncertainty)
     tap_changing_strategy = OptionSetter(get_pgc().set_tap_changing_strategy)
     short_circuit_voltage_scaling = OptionSetter(get_pgc().set_short_circuit_voltage_scaling)
     experimental_features = OptionSetter(get_pgc().set_experimental_features)

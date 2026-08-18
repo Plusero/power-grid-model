@@ -46,6 +46,7 @@ calculation_function_arguments_map: dict[str, tuple[Callable, list[str]]] = {
             "error_tolerance",
             "max_iterations",
             "calculation_method",
+            "calculate_uncertainty",
             "update_data",
             "threading",
             "output_component_types",

@@ -279,6 +279,34 @@ This produces more correct outputs when the system is observable, but will preve
 exception, even if it is unobservable, therefore giving faulty results.
 ```
 
+### State Estimate Output Uncertainty
+
+Setting `calculate_uncertainty=True` for iterative-linear state estimation obtains the selected state-covariance blocks
+from the inverse of the final augmented WLS matrix. The calculation is conditional on the final measurement
+transformation and voltage reference: it is a covariance calculation for that fixed local linear model, not a
+linearization of the complete iterative procedure.
+
+The propagation adopts a proper (circular) effective complex voltage error, for which the pseudo-covariance is zero.
+Voltage magnitude and angle, branch-current magnitude, and branch active/reactive power standard deviations are then
+computed with a first-order delta approximation. Node active/reactive injection standard deviations additionally require
+covariance blocks over the node's closed electrical neighbourhood.
+
+Consequently, the reported sigmas are local analytical approximations rather than confidence bounds. In particular:
+
+- without a voltage-angle measurement, reported angles use slack phase A as their reference. Its angle sigma is zero,
+  and the other angle sigmas include their covariance with that reference;
+- the magnitude approximation for current is undefined at zero current, for which the current sigma is `NaN`;
+- a factorization requiring numerical LU pivot perturbation is rejected with `SparseMatrixError`, because the selected
+  inverse is not valid for the perturbed system;
+- an ideal `link` has no separately identifiable terminal-flow uncertainty, so its flow sigmas are `NaN`;
+- nodes joined by connected ideal links share a physical voltage, but their individual injections cannot be separated
+  by the covariance model, so their `p_sigma` and `q_sigma` are `NaN`.
+
+The option is not supported by Newton-Raphson state estimation. If uncertainty is not requested, all sigma fields remain
+`NaN` and the state estimate is calculated normally. See
+[Analytical output uncertainty](../user_manual/calculations.md#analytical-output-uncertainty) for the public output
+fields and units.
+
 ## Newton-Raphson state estimation
 
 Algorithm call: {py:class}`CalculationMethod.newton_raphson <power_grid_model.enum.CalculationMethod.newton_raphson>`

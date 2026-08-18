@@ -28,6 +28,11 @@ struct NodeOutput {
     RealValue<sym> u_angle{nan};  // voltage magnitude and angle
     RealValue<sym> p{nan};  // node injection
     RealValue<sym> q{nan};  // node injection
+    RealValue<sym> u_pu_sigma{nan};  // standard deviation of voltage magnitude
+    RealValue<sym> u_sigma{nan};  // standard deviation of voltage magnitude
+    RealValue<sym> u_angle_sigma{nan};  // standard deviation of voltage angle
+    RealValue<sym> p_sigma{nan};  // standard deviation of node injection
+    RealValue<sym> q_sigma{nan};  // standard deviation of node injection
 
     // implicit conversions to BaseOutput
     operator BaseOutput&() { return reinterpret_cast<BaseOutput&>(*this); }
@@ -52,6 +57,12 @@ struct BranchOutput {
     RealValue<sym> q_to{nan};  // power flow at to-side
     RealValue<sym> i_to{nan};  // power flow at to-side
     RealValue<sym> s_to{nan};  // power flow at to-side
+    RealValue<sym> p_from_sigma{nan};  // standard deviation of power and current flow at from-side
+    RealValue<sym> q_from_sigma{nan};  // standard deviation of power and current flow at from-side
+    RealValue<sym> i_from_sigma{nan};  // standard deviation of power and current flow at from-side
+    RealValue<sym> p_to_sigma{nan};  // standard deviation of power and current flow at to-side
+    RealValue<sym> q_to_sigma{nan};  // standard deviation of power and current flow at to-side
+    RealValue<sym> i_to_sigma{nan};  // standard deviation of power and current flow at to-side
 
     // implicit conversions to BaseOutput
     operator BaseOutput&() { return reinterpret_cast<BaseOutput&>(*this); }
@@ -83,6 +94,15 @@ struct Branch3Output {
     RealValue<sym> q_3{nan};  // power flow at side 3
     RealValue<sym> i_3{nan};  // power flow at side 3
     RealValue<sym> s_3{nan};  // power flow at side 3
+    RealValue<sym> p_1_sigma{nan};  // standard deviation of power and current flow at side 1
+    RealValue<sym> q_1_sigma{nan};  // standard deviation of power and current flow at side 1
+    RealValue<sym> i_1_sigma{nan};  // standard deviation of power and current flow at side 1
+    RealValue<sym> p_2_sigma{nan};  // standard deviation of power and current flow at side 2
+    RealValue<sym> q_2_sigma{nan};  // standard deviation of power and current flow at side 2
+    RealValue<sym> i_2_sigma{nan};  // standard deviation of power and current flow at side 2
+    RealValue<sym> p_3_sigma{nan};  // standard deviation of power and current flow at side 3
+    RealValue<sym> q_3_sigma{nan};  // standard deviation of power and current flow at side 3
+    RealValue<sym> i_3_sigma{nan};  // standard deviation of power and current flow at side 3
 
     // implicit conversions to BaseOutput
     operator BaseOutput&() { return reinterpret_cast<BaseOutput&>(*this); }

@@ -317,6 +317,8 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
         }
     }
 
+    bool has_pivot_perturbation() const noexcept { return has_pivot_perturbation_; }
+
     // Compute Takahashi dependency blocks over the solver's stored sparse pattern
     // row_indptr_/col_indices_. This pattern includes fill-ins and can be larger
     // than the downstream target pattern, e.g. the original y_bus pattern.
@@ -698,7 +700,8 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
         // Column below pivot: replace L_kp with Z_kp = -(sum_m Z_km * L_mp) * L_p^-1.
         for (Idx k_offset = 0; k_offset < n_off_diagonal; ++k_offset) {
             Idx const z_row = col_indices_[u_start + k_offset];
-            Tensor sum = Tensor::Zero();
+            Tensor sum{};
+            sum.setZero();
             Idx z_idx = l_indices[k_offset];
             for (Idx m_offset = 0; m_offset < n_off_diagonal; ++m_offset) {
                 Idx const z_col = col_indices_[u_start + m_offset];
@@ -711,7 +714,8 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
         // Row right of pivot: replace U_pj with Z_pj = -U_p^-1 * sum_m U_pm * Z_mj.
         for (Idx j_offset = 0; j_offset < n_off_diagonal; ++j_offset) {
             Idx const z_col = col_indices_[u_start + j_offset];
-            Tensor sum = Tensor::Zero();
+            Tensor sum{};
+            sum.setZero();
             for (Idx m_offset = 0; m_offset < n_off_diagonal; ++m_offset) {
                 Idx const z_row = col_indices_[u_start + m_offset];
                 Idx const z_idx = find_entry(z_row, z_col, l_indices[m_offset] + 1, row_indptr_[z_row + 1]);
@@ -721,7 +725,8 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
         }
 
         // Diagonal last: Z_pp = (L_p * U_p)^-1 - U_p^-1 * sum_m U_pm * Z_mp.
-        Tensor sum = Tensor::Zero();
+        Tensor sum{};
+        sum.setZero();
         for (Idx m_offset = 0; m_offset < n_off_diagonal; ++m_offset) {
             sum += dot(u_row[m_offset], data[l_indices[m_offset]]);
         }

@@ -21,11 +21,17 @@ from power_grid_model import (
 )
 from power_grid_model._core.utils import compatibility_convert_row_columnar_dataset
 from power_grid_model.data_types import BatchDataset
-from power_grid_model.errors import InvalidCalculationMethod, IterationDiverge, PowerGridBatchError, PowerGridError
+from power_grid_model.errors import (
+    InvalidArguments,
+    InvalidCalculationMethod,
+    IterationDiverge,
+    PowerGridBatchError,
+    PowerGridError,
+)
 from power_grid_model.utils import get_dataset_scenario
 from power_grid_model.validation import assert_valid_input_data
 
-from .utils import compare_result
+from .utils import DATA_PATH, compare_result, import_case_data
 
 """
 Testing network
@@ -250,6 +256,157 @@ def test_single_calculation_error(model: PowerGridModel):
     for calculation_method in ("linear", "newton_raphson", "iterative_current", "linear_current", "iterative_linear"):
         with pytest.raises(InvalidCalculationMethod):
             model.calculate_short_circuit(calculation_method=calculation_method)
+
+
+def test_iterative_linear_state_estimation_uncertainty():
+    case_data = import_case_data(
+        DATA_PATH / "state_estimation" / "single-line-load-il", calculation_type="state_estimation", sym=True
+    )
+    model = PowerGridModel(case_data[DT.input], system_frequency=50.0)
+
+    result_without_uncertainty = model.calculate_state_estimation(calculation_method="iterative_linear")
+    result = model.calculate_state_estimation(
+        calculation_method="iterative_linear",
+        calculate_uncertainty=True,
+    )
+
+    assert result[CT.node].shape == (2,)
+    assert result[CT.line].shape == (1,)
+
+    sigma_to_value = {
+        CT.node: {
+            AT.u_pu_sigma: AT.u_pu,
+            AT.u_sigma: AT.u,
+            AT.u_angle_sigma: AT.u_angle,
+            AT.p_sigma: AT.p,
+            AT.q_sigma: AT.q,
+        },
+        CT.line: {
+            AT.p_from_sigma: AT.p_from,
+            AT.q_from_sigma: AT.q_from,
+            AT.i_from_sigma: AT.i_from,
+            AT.p_to_sigma: AT.p_to,
+            AT.q_to_sigma: AT.q_to,
+            AT.i_to_sigma: AT.i_to,
+        },
+    }
+
+    for component, fields in sigma_to_value.items():
+        for sigma_field, value_field in fields.items():
+            assert sigma_field in result[component].dtype.names
+            assert result[component][sigma_field].shape == result[component][value_field].shape
+            assert np.all(np.isnan(result_without_uncertainty[component][sigma_field]))
+            assert np.all(np.isfinite(result[component][sigma_field]))
+            assert np.all(result[component][sigma_field] >= 0.0)
+
+    with pytest.raises(InvalidArguments, match=r"calculate_uncertainty.*iterative-linear"):
+        model.calculate_state_estimation(
+            calculation_method="newton_raphson",
+            calculate_uncertainty=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("case_name", "symmetric"),
+    [
+        ("single-node-source-sym-voltage-sensor", True),
+        ("single-node-source-asym-voltage-sensor", False),
+    ],
+)
+def test_iterative_linear_state_estimation_voltage_uncertainty_analytical(case_name: str, symmetric: bool):
+    case_data = import_case_data(
+        DATA_PATH / "state_estimation" / case_name,
+        calculation_type="state_estimation",
+        sym=symmetric,
+    )
+    result = PowerGridModel(case_data[DT.input], system_frequency=50.0).calculate_state_estimation(
+        symmetric=symmetric,
+        calculation_method="iterative_linear",
+        calculate_uncertainty=True,
+    )
+
+    node = result[CT.node]
+    expected_u_sigma = 100.0 / np.sqrt(2.0)
+    np.testing.assert_allclose(node[AT.u_sigma], expected_u_sigma)
+    np.testing.assert_allclose(node[AT.u_pu_sigma], expected_u_sigma * node[AT.u_pu] / node[AT.u])
+    np.testing.assert_allclose(node[AT.u_angle_sigma], expected_u_sigma / node[AT.u])
+
+
+def test_iterative_linear_state_estimation_uncertainty_without_angle_reference():
+    case_data = import_case_data(
+        DATA_PATH / "state_estimation" / "single-node-source-asym-voltage-sensor-no-angle",
+        calculation_type="state_estimation",
+        sym=False,
+    )
+    result = PowerGridModel(case_data[DT.input], system_frequency=50.0).calculate_state_estimation(
+        symmetric=False,
+        calculation_method="iterative_linear",
+        calculate_uncertainty=True,
+    )
+
+    node = result[CT.node][0]
+    angle_sigma = node[AT.u_angle_sigma]
+    assert angle_sigma[0] == 0.0
+    unreferenced_angle_sigma = node[AT.u_sigma] / node[AT.u]
+    expected_referenced_sigma = np.sqrt(unreferenced_angle_sigma[1:] ** 2 + unreferenced_angle_sigma[0] ** 2)
+    np.testing.assert_allclose(angle_sigma[1:], expected_referenced_sigma)
+
+
+def test_iterative_linear_state_estimation_uncertainty_for_ideal_link_supernode():
+    case_data = import_case_data(
+        DATA_PATH / "state_estimation" / "node-injection-with-injection-sensor-sym-sensors",
+        calculation_type="state_estimation",
+        sym=True,
+    )
+    result = PowerGridModel(case_data[DT.input], system_frequency=50.0).calculate_state_estimation(
+        calculation_method="iterative_linear",
+        calculate_uncertainty=True,
+    )
+
+    assert np.all(np.isfinite(result[CT.node][AT.u_sigma]))
+    assert np.all(np.isnan(result[CT.node][AT.p_sigma]))
+    assert np.all(np.isnan(result[CT.node][AT.q_sigma]))
+
+    link_sigma_fields = (
+        AT.p_from_sigma,
+        AT.q_from_sigma,
+        AT.i_from_sigma,
+        AT.p_to_sigma,
+        AT.q_to_sigma,
+        AT.i_to_sigma,
+    )
+    for field in link_sigma_fields:
+        assert np.all(np.isnan(result[CT.link][field]))
+
+
+def test_iterative_linear_state_estimation_uncertainty_for_three_winding_transformer():
+    case_data = import_case_data(
+        DATA_PATH / "state_estimation" / "three_winding_transformer",
+        calculation_type="state_estimation",
+        sym=True,
+    )
+    model = PowerGridModel(case_data[DT.input], system_frequency=50.0)
+    result_without_uncertainty = model.calculate_state_estimation(calculation_method="iterative_linear")
+    result = model.calculate_state_estimation(
+        calculation_method="iterative_linear",
+        calculate_uncertainty=True,
+    )
+
+    component = CT.three_winding_transformer
+    for field in (
+        AT.p_1_sigma,
+        AT.q_1_sigma,
+        AT.i_1_sigma,
+        AT.p_2_sigma,
+        AT.q_2_sigma,
+        AT.i_2_sigma,
+        AT.p_3_sigma,
+        AT.q_3_sigma,
+        AT.i_3_sigma,
+    ):
+        assert np.all(np.isnan(result_without_uncertainty[component][field]))
+        assert np.all(np.isfinite(result[component][field]))
+        assert np.all(result[component][field] >= 0.0)
 
 
 def test_batch_calculation_error(model: PowerGridModel, update_batch):

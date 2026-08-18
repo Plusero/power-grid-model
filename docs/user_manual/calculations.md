@@ -75,6 +75,58 @@ Output:
 - Power flow through branches
 - Deviation between measurement values and estimated state
 
+##### Analytical output uncertainty
+
+Iterative-linear state estimation can also calculate approximate standard deviations for its estimated outputs:
+
+See the
+[Iterative-Linear State Estimation UQ Example](../examples/Iterative%20Linear%20State%20Estimation%20UQ%20Example.ipynb)
+for a complete runnable example.
+
+```python
+result = model.calculate_state_estimation(
+    calculation_method="iterative_linear",
+    calculate_uncertainty=True,
+)
+```
+
+The additional output attributes are:
+
+- nodes: `u_pu_sigma`, `u_sigma`, `u_angle_sigma`, `p_sigma`, and `q_sigma`;
+- two-terminal branches: `p_from_sigma`, `q_from_sigma`, `i_from_sigma`, `p_to_sigma`, `q_to_sigma`, and
+  `i_to_sigma`;
+- three-terminal branches: `p_1_sigma`, `q_1_sigma`, `i_1_sigma`, and the corresponding `_2_sigma` and
+  `_3_sigma` attributes.
+
+Sigma attributes use the same physical unit and array shape as the corresponding output attribute; angle standard
+deviations are in radians. In an asymmetric calculation, each value contains one standard deviation per phase. There is
+no `s_sigma` output because active- and reactive-power uncertainty is reported separately.
+
+`calculate_uncertainty` defaults to `False`. The sigma attributes remain present in the output schema, but their values
+are `NaN` when uncertainty calculation is not requested. The option is currently supported only with
+`calculation_method="iterative_linear"`; requesting it with Newton-Raphson state estimation raises an error.
+
+These standard deviations describe the final, fixed local iterative-linear model. They use first-order propagation for
+voltage and current magnitudes and for active and reactive power, and assume that the effective complex voltage error is
+proper (circular), so its pseudo-covariance is zero. They do not include the uncertainty of the preceding iterative
+measurement transformations. See
+[State Estimate Output Uncertainty](../algorithms/se-algorithms.md#state-estimate-output-uncertainty) for details.
+
+If no voltage-angle measurement is present, voltage angles and their standard deviations use phase A of the slack bus
+as their reference. The slack phase-A `u_angle_sigma` is therefore zero.
+
+```{warning}
+Current-magnitude linearization is undefined at zero current. `i_from_sigma`, `i_to_sigma`, or the corresponding
+three-terminal field is therefore `NaN` when the estimated terminal current is zero.
+
+Uncertainty calculation raises `SparseMatrixError` when numerical LU pivot perturbation is required. The selected
+inverse is not valid for a numerically perturbed factorization.
+
+Ideal links have no separately identifiable branch-flow uncertainty, so their branch sigma fields are `NaN`. Node
+voltage sigma fields remain available for nodes joined by connected ideal links, but the injection of each individual
+node cannot be separated: `p_sigma` and `q_sigma` are `NaN` for every such node.
+```
+
 In order to perform a state estimation, the system should be observable.
 If the system is not observable, the calculation will raise either a `NotObservableError` or a `SparseMatrixError`.
 In short, meeting the requirement of observability indicates that the system is either an overdetermined system (when

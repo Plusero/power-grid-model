@@ -33,8 +33,8 @@ template <symmetry_tag sym> class MathSolverBase {
                                              bool cache_run, Logger& log, CalculationMethod calculation_method,
                                              YBus<sym> const& y_bus) = 0;
     virtual SolverOutput<sym> run_state_estimation(StateEstimationInput<sym> const& input, double err_tol, Idx max_iter,
-                                                   Logger& log, CalculationMethod calculation_method,
-                                                   YBus<sym> const& y_bus) = 0;
+                                                   bool calculate_uncertainty, Logger& log,
+                                                   CalculationMethod calculation_method, YBus<sym> const& y_bus) = 0;
     virtual ShortCircuitSolverOutput<sym> run_short_circuit(ShortCircuitInput const& input, Logger& log,
                                                             CalculationMethod calculation_method,
                                                             YBus<sym> const& y_bus) = 0;

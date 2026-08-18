@@ -103,8 +103,10 @@ template <symmetry_tag sym> struct Calculator<state_estimation_t, sym> {
     static auto solver(CalculationMethod calculation_method, MainModelOptions const& options, bool /*cache_run*/,
                        Logger& logger) {
         return [calculation_method, err_tol = options.err_tol, max_iter = options.max_iter,
+                calculate_uncertainty = options.calculate_uncertainty,
                 &logger](MathSolverProxy<sym>& solver, YBus<sym> const& y_bus, StateEstimationInput<sym> const& input) {
-            return solver.get().run_state_estimation(input, err_tol, max_iter, logger, calculation_method, y_bus);
+            return solver.get().run_state_estimation(input, err_tol, max_iter, calculate_uncertainty, logger,
+                                                     calculation_method, y_bus);
         };
     }
 };

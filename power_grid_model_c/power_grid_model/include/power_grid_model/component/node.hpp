@@ -9,6 +9,7 @@
 #include "../auxiliary/input.hpp"
 #include "../auxiliary/output.hpp"
 #include "../auxiliary/update.hpp"
+#include "../calculation_parameters.hpp"
 #include "../common/common.hpp"
 #include "../common/enum.hpp"
 #include "../common/three_phase_tensor.hpp"
@@ -45,6 +46,18 @@ class Node final : public Base {
         return output;
     }
 
+    template <symmetry_tag sym>
+    NodeOutput<sym> get_output(ComplexValue<sym> const& u_pu, ComplexValue<sym> const& bus_injection,
+                               BusUncertaintyOutput<sym> const& uncertainty) const {
+        auto output = get_output<sym>(u_pu, bus_injection);
+        output.u_pu_sigma = uncertainty.u_sigma;
+        output.u_sigma = u_scale<sym> * u_rated_ * uncertainty.u_sigma;
+        output.u_angle_sigma = uncertainty.u_angle_sigma;
+        output.p_sigma = base_power<sym> * uncertainty.p_sigma;
+        output.q_sigma = base_power<sym> * uncertainty.q_sigma;
+        return output;
+    }
+
     NodeShortCircuitOutput get_sc_output(ComplexValue<asymmetric_t> const& u_pu) const {
         NodeShortCircuitOutput output{};
         static_cast<BaseOutput&>(output) = base_output(true);
@@ -60,7 +73,16 @@ class Node final : public Base {
         return get_sc_output(uabc_pu);
     }
     template <symmetry_tag sym> NodeOutput<sym> get_null_output() const {
-        NodeOutput<sym> output{.u_pu = {}, .u = {}, .u_angle = {}, .p = {}, .q = {}};
+        NodeOutput<sym> output{.u_pu = {},
+                               .u = {},
+                               .u_angle = {},
+                               .p = {},
+                               .q = {},
+                               .u_pu_sigma = RealValue<sym>{nan},
+                               .u_sigma = RealValue<sym>{nan},
+                               .u_angle_sigma = RealValue<sym>{nan},
+                               .p_sigma = RealValue<sym>{nan},
+                               .q_sigma = RealValue<sym>{nan}};
         static_cast<BaseOutput&>(output) = base_output(false);
         return output;
     }

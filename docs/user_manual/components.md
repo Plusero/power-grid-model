@@ -58,13 +58,18 @@ Physically a node can be a busbar, a joint, or other similar component.
 
 #### Steady state output
 
-| name      | data type         | unit                       | description                                                                                     |
-|-----------|-------------------|----------------------------|-------------------------------------------------------------------------------------------------|
-| `u_pu`    | `RealValueOutput` | -                          | per-unit voltage magnitude                                                                      |
-| `u_angle` | `RealValueOutput` | rad                        | voltage angle                                                                                   |
-| `u`       | `RealValueOutput` | volt (V)                   | voltage magnitude, line-line for symmetric calculation, line-neutral for asymmetric calculation |
-| `p`       | `RealValueOutput` | watt (W)                   | active power injection                                                                          |
-| `q`       | `RealValueOutput` | volt-ampere-reactive (var) | reactive power injection                                                                        |
+| name            | data type         | unit                       | description                                                                                     |
+|-----------------|-------------------|----------------------------|-------------------------------------------------------------------------------------------------|
+| `u_pu`          | `RealValueOutput` | -                          | per-unit voltage magnitude                                                                      |
+| `u_angle`       | `RealValueOutput` | rad                        | voltage angle                                                                                   |
+| `u`             | `RealValueOutput` | volt (V)                   | voltage magnitude, line-line for symmetric calculation, line-neutral for asymmetric calculation |
+| `p`             | `RealValueOutput` | watt (W)                   | active power injection                                                                          |
+| `q`             | `RealValueOutput` | volt-ampere-reactive (var) | reactive power injection                                                                        |
+| `u_pu_sigma`    | `RealValueOutput` | -                          | standard deviation of per-unit voltage magnitude                                                |
+| `u_sigma`       | `RealValueOutput` | volt (V)                   | standard deviation of voltage magnitude                                                         |
+| `u_angle_sigma` | `RealValueOutput` | rad                        | standard deviation of voltage angle                                                             |
+| `p_sigma`       | `RealValueOutput` | watt (W)                   | standard deviation of active power injection                                                    |
+| `q_sigma`       | `RealValueOutput` | volt-ampere-reactive (var) | standard deviation of reactive power injection                                                  |
 
 ```{note}
 The `p` and `q` output of injection follows the `generator` reference direction as mentioned in
@@ -101,17 +106,23 @@ In this case, the attribute `from_status` and `to_status` is always 1.
 
 #### Steady state output
 
-| name      | data type         | unit                       | description                                                |
-|-----------|-------------------|----------------------------|------------------------------------------------------------|
-| `p_from`  | `RealValueOutput` | watt (W)                   | active power flowing into the branch at from-side          |
-| `q_from`  | `RealValueOutput` | volt-ampere-reactive (var) | reactive power flowing into the branch at from-side        |
-| `i_from`  | `RealValueOutput` | ampere (A)                 | magnitude of current at from-side                          |
-| `s_from`  | `RealValueOutput` | volt-ampere (VA)           | apparent power flowing at from-side                        |
-| `p_to`    | `RealValueOutput` | watt (W)                   | active power flowing into the branch at to-side            |
-| `q_to`    | `RealValueOutput` | volt-ampere-reactive (var) | reactive power flowing into the branch at to-side          |
-| `i_to`    | `RealValueOutput` | ampere (A)                 | magnitude of current at to-side                            |
-| `s_to`    | `RealValueOutput` | volt-ampere (VA)           | apparent power flowing at to-side                          |
-| `loading` | `double`          | -                          | relative loading of the branch, `1.0` meaning 100% loaded. |
+| name           | data type         | unit                       | description                                                |
+|----------------|-------------------|----------------------------|------------------------------------------------------------|
+| `p_from`       | `RealValueOutput` | watt (W)                   | active power flowing into the branch at from-side          |
+| `q_from`       | `RealValueOutput` | volt-ampere-reactive (var) | reactive power flowing into the branch at from-side        |
+| `i_from`       | `RealValueOutput` | ampere (A)                 | magnitude of current at from-side                          |
+| `s_from`       | `RealValueOutput` | volt-ampere (VA)           | apparent power flowing at from-side                        |
+| `p_to`         | `RealValueOutput` | watt (W)                   | active power flowing into the branch at to-side            |
+| `q_to`         | `RealValueOutput` | volt-ampere-reactive (var) | reactive power flowing into the branch at to-side          |
+| `i_to`         | `RealValueOutput` | ampere (A)                 | magnitude of current at to-side                            |
+| `s_to`         | `RealValueOutput` | volt-ampere (VA)           | apparent power flowing at to-side                          |
+| `p_from_sigma` | `RealValueOutput` | watt (W)                   | standard deviation of active power flow at from-side       |
+| `q_from_sigma` | `RealValueOutput` | volt-ampere-reactive (var) | standard deviation of reactive power flow at from-side     |
+| `i_from_sigma` | `RealValueOutput` | ampere (A)                 | standard deviation of current magnitude at from-side       |
+| `p_to_sigma`   | `RealValueOutput` | watt (W)                   | standard deviation of active power flow at to-side         |
+| `q_to_sigma`   | `RealValueOutput` | volt-ampere-reactive (var) | standard deviation of reactive power flow at to-side       |
+| `i_to_sigma`   | `RealValueOutput` | ampere (A)                 | standard deviation of current magnitude at to-side         |
+| `loading`      | `double`          | -                          | relative loading of the branch, `1.0` meaning 100% loaded. |
 
 #### Short circuit output
 
@@ -480,21 +491,30 @@ In reality such switches may not exist.
 
 #### Steady state output
 
-| name      | data type         | unit                       | description                                                |
-|-----------|-------------------|----------------------------|------------------------------------------------------------|
-| `p_1`     | `RealValueOutput` | watt (W)                   | active power flowing into the branch at side 1             |
-| `q_1`     | `RealValueOutput` | volt-ampere-reactive (var) | reactive power flowing into the branch at side 1           |
-| `i_1`     | `RealValueOutput` | ampere (A)                 | current at side 1                                          |
-| `s_1`     | `RealValueOutput` | volt-ampere (VA)           | apparent power flowing at side 1                           |
-| `p_2`     | `RealValueOutput` | watt (W)                   | active power flowing into the branch at side 2             |
-| `q_2`     | `RealValueOutput` | volt-ampere-reactive (var) | reactive power flowing into the branch at side 2           |
-| `i_2`     | `RealValueOutput` | ampere (A)                 | current at side 2                                          |
-| `s_2`     | `RealValueOutput` | volt-ampere (VA)           | apparent power flowing at side 2                           |
-| `p_3`     | `RealValueOutput` | watt (W)                   | active power flowing into the branch at side 3             |
-| `q_3`     | `RealValueOutput` | volt-ampere-reactive (var) | reactive power flowing into the branch at side 3           |
-| `i_3`     | `RealValueOutput` | ampere (A)                 | current at side 3                                          |
-| `s_3`     | `RealValueOutput` | volt-ampere (VA)           | apparent power flowing at side 3                           |
-| `loading` | `double`          | -                          | relative loading of the branch, `1.0` meaning 100% loaded. |
+| name        | data type         | unit                       | description                                                |
+|-------------|-------------------|----------------------------|------------------------------------------------------------|
+| `p_1`       | `RealValueOutput` | watt (W)                   | active power flowing into the branch at side 1             |
+| `q_1`       | `RealValueOutput` | volt-ampere-reactive (var) | reactive power flowing into the branch at side 1           |
+| `i_1`       | `RealValueOutput` | ampere (A)                 | current at side 1                                          |
+| `s_1`       | `RealValueOutput` | volt-ampere (VA)           | apparent power flowing at side 1                           |
+| `p_2`       | `RealValueOutput` | watt (W)                   | active power flowing into the branch at side 2             |
+| `q_2`       | `RealValueOutput` | volt-ampere-reactive (var) | reactive power flowing into the branch at side 2           |
+| `i_2`       | `RealValueOutput` | ampere (A)                 | current at side 2                                          |
+| `s_2`       | `RealValueOutput` | volt-ampere (VA)           | apparent power flowing at side 2                           |
+| `p_3`       | `RealValueOutput` | watt (W)                   | active power flowing into the branch at side 3             |
+| `q_3`       | `RealValueOutput` | volt-ampere-reactive (var) | reactive power flowing into the branch at side 3           |
+| `i_3`       | `RealValueOutput` | ampere (A)                 | current at side 3                                          |
+| `s_3`       | `RealValueOutput` | volt-ampere (VA)           | apparent power flowing at side 3                           |
+| `p_1_sigma` | `RealValueOutput` | watt (W)                   | standard deviation of active power flow at side 1          |
+| `q_1_sigma` | `RealValueOutput` | volt-ampere-reactive (var) | standard deviation of reactive power flow at side 1        |
+| `i_1_sigma` | `RealValueOutput` | ampere (A)                 | standard deviation of current magnitude at side 1          |
+| `p_2_sigma` | `RealValueOutput` | watt (W)                   | standard deviation of active power flow at side 2          |
+| `q_2_sigma` | `RealValueOutput` | volt-ampere-reactive (var) | standard deviation of reactive power flow at side 2        |
+| `i_2_sigma` | `RealValueOutput` | ampere (A)                 | standard deviation of current magnitude at side 2          |
+| `p_3_sigma` | `RealValueOutput` | watt (W)                   | standard deviation of active power flow at side 3          |
+| `q_3_sigma` | `RealValueOutput` | volt-ampere-reactive (var) | standard deviation of reactive power flow at side 3        |
+| `i_3_sigma` | `RealValueOutput` | ampere (A)                 | standard deviation of current magnitude at side 3          |
+| `loading`   | `double`          | -                          | relative loading of the branch, `1.0` meaning 100% loaded. |
 
 #### Short circuit output
 

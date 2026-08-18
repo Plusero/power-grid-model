@@ -104,6 +104,12 @@ class Branch : public Base {
         output.q_to = base_power<sym> * imag(branch_solver_output.s_t);
         output.i_to = base_i_to() * cabs(branch_solver_output.i_t);
         output.s_to = base_power<sym> * cabs(branch_solver_output.s_t);
+        output.p_from_sigma = base_power<sym> * branch_solver_output.p_f_sigma;
+        output.q_from_sigma = base_power<sym> * branch_solver_output.q_f_sigma;
+        output.i_from_sigma = base_i_from() * branch_solver_output.i_f_sigma;
+        output.p_to_sigma = base_power<sym> * branch_solver_output.p_t_sigma;
+        output.q_to_sigma = base_power<sym> * branch_solver_output.q_t_sigma;
+        output.i_to_sigma = base_i_to() * branch_solver_output.i_t_sigma;
         double const max_s = std::max(sum_val(output.s_from), sum_val(output.s_to));
         double const max_i = std::max(max_val(output.i_from), max_val(output.i_to));
         output.loading = loading(max_s, max_i);
@@ -147,7 +153,13 @@ class Branch : public Base {
                                  .p_to = {},
                                  .q_to = {},
                                  .i_to = {},
-                                 .s_to = {}};
+                                 .s_to = {},
+                                 .p_from_sigma = RealValue<sym>{nan},
+                                 .q_from_sigma = RealValue<sym>{nan},
+                                 .i_from_sigma = RealValue<sym>{nan},
+                                 .p_to_sigma = RealValue<sym>{nan},
+                                 .q_to_sigma = RealValue<sym>{nan},
+                                 .i_to_sigma = RealValue<sym>{nan}};
         static_cast<BaseOutput&>(output) = base_output(false);
         return output;
     }

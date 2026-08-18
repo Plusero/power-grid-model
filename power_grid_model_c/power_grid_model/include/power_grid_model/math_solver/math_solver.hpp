@@ -64,16 +64,20 @@ template <symmetry_tag sym> class MathSolver : public MathSolverBase<sym> {
     }
 
     SolverOutput<sym> run_state_estimation(StateEstimationInput<sym> const& input, double err_tol, Idx max_iter,
-                                           Logger& log, CalculationMethod calculation_method,
-                                           YBus<sym> const& y_bus) final {
+                                           bool calculate_uncertainty, Logger& log,
+                                           CalculationMethod calculation_method, YBus<sym> const& y_bus) final {
         using enum CalculationMethod;
 
         switch (calculation_method) {
         case default_method:
             [[fallthrough]]; // use iterative linear by default
         case iterative_linear:
-            return run_state_estimation_iterative_linear(input, err_tol, max_iter, log, y_bus);
+            return run_state_estimation_iterative_linear(input, err_tol, max_iter, calculate_uncertainty, log, y_bus);
         case newton_raphson:
+            if (calculate_uncertainty) {
+                throw InvalidArguments{"run_state_estimation",
+                                       "uncertainty quantification is currently supported only for iterative_linear"};
+            }
             return run_state_estimation_newton_raphson(input, err_tol, max_iter, log, y_bus);
         default:
             throw InvalidCalculationMethod{};
@@ -156,7 +160,8 @@ template <symmetry_tag sym> class MathSolver : public MathSolverBase<sym> {
     }
 
     SolverOutput<sym> run_state_estimation_iterative_linear(StateEstimationInput<sym> const& input, double err_tol,
-                                                            Idx max_iter, Logger& log, YBus<sym> const& y_bus) {
+                                                            Idx max_iter, bool calculate_uncertainty, Logger& log,
+                                                            YBus<sym> const& y_bus) {
         // construct model if needed
         if (!iterative_linear_se_solver_.has_value()) {
             Timer const timer{log, LogEvent::create_math_solver};
@@ -164,7 +169,8 @@ template <symmetry_tag sym> class MathSolver : public MathSolverBase<sym> {
         }
 
         // call calculation
-        return iterative_linear_se_solver_.value().run_state_estimation(y_bus, input, err_tol, max_iter, log);
+        return iterative_linear_se_solver_.value().run_state_estimation(y_bus, input, err_tol, max_iter,
+                                                                        calculate_uncertainty, log);
     }
 
     SolverOutput<sym> run_state_estimation_newton_raphson(StateEstimationInput<sym> const& input, double err_tol,

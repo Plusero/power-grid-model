@@ -354,6 +354,11 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_node_u;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_node_u_angle;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_node_p;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_node_q;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_node_u_pu_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_node_u_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_node_u_angle_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_node_p_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_node_q_sigma;
 // component line
 PGM_API extern PGM_MetaComponent const* const PGM_def_sym_output_line;
 // attributes of sym_output line
@@ -368,6 +373,12 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_line_p_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_line_q_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_line_i_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_line_s_to;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_line_p_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_line_q_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_line_i_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_line_p_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_line_q_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_line_i_to_sigma;
 // component link
 PGM_API extern PGM_MetaComponent const* const PGM_def_sym_output_link;
 // attributes of sym_output link
@@ -382,6 +393,12 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_link_p_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_link_q_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_link_i_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_link_s_to;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_link_p_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_link_q_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_link_i_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_link_p_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_link_q_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_link_i_to_sigma;
 // component transformer
 PGM_API extern PGM_MetaComponent const* const PGM_def_sym_output_transformer;
 // attributes of sym_output transformer
@@ -396,6 +413,12 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_transformer_p_t
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_transformer_q_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_transformer_i_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_transformer_s_to;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_transformer_p_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_transformer_q_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_transformer_i_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_transformer_p_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_transformer_q_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_transformer_i_to_sigma;
 // component generic_branch
 PGM_API extern PGM_MetaComponent const* const PGM_def_sym_output_generic_branch;
 // attributes of sym_output generic_branch
@@ -410,6 +433,12 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_generic_branch_
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_generic_branch_q_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_generic_branch_i_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_generic_branch_s_to;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_generic_branch_p_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_generic_branch_q_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_generic_branch_i_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_generic_branch_p_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_generic_branch_q_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_generic_branch_i_to_sigma;
 // component asym_line
 PGM_API extern PGM_MetaComponent const* const PGM_def_sym_output_asym_line;
 // attributes of sym_output asym_line
@@ -424,6 +453,12 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_asym_line_p_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_asym_line_q_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_asym_line_i_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_asym_line_s_to;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_asym_line_p_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_asym_line_q_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_asym_line_i_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_asym_line_p_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_asym_line_q_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_asym_line_i_to_sigma;
 // component transformer_tap_regulator
 PGM_API extern PGM_MetaComponent const* const PGM_def_sym_output_transformer_tap_regulator;
 // attributes of sym_output transformer_tap_regulator
@@ -451,6 +486,15 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_three_winding_t
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_three_winding_transformer_q_3;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_three_winding_transformer_i_3;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_three_winding_transformer_s_3;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_three_winding_transformer_p_1_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_three_winding_transformer_q_1_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_three_winding_transformer_i_1_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_three_winding_transformer_p_2_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_three_winding_transformer_q_2_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_three_winding_transformer_i_2_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_three_winding_transformer_p_3_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_three_winding_transformer_q_3_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_three_winding_transformer_i_3_sigma;
 // component sym_load
 PGM_API extern PGM_MetaComponent const* const PGM_def_sym_output_sym_load;
 // attributes of sym_output sym_load
@@ -577,6 +621,11 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_node_u;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_node_u_angle;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_node_p;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_node_q;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_node_u_pu_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_node_u_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_node_u_angle_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_node_p_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_node_q_sigma;
 // component line
 PGM_API extern PGM_MetaComponent const* const PGM_def_asym_output_line;
 // attributes of asym_output line
@@ -591,6 +640,12 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_line_p_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_line_q_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_line_i_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_line_s_to;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_line_p_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_line_q_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_line_i_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_line_p_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_line_q_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_line_i_to_sigma;
 // component link
 PGM_API extern PGM_MetaComponent const* const PGM_def_asym_output_link;
 // attributes of asym_output link
@@ -605,6 +660,12 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_link_p_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_link_q_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_link_i_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_link_s_to;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_link_p_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_link_q_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_link_i_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_link_p_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_link_q_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_link_i_to_sigma;
 // component transformer
 PGM_API extern PGM_MetaComponent const* const PGM_def_asym_output_transformer;
 // attributes of asym_output transformer
@@ -619,6 +680,12 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_transformer_p_
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_transformer_q_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_transformer_i_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_transformer_s_to;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_transformer_p_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_transformer_q_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_transformer_i_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_transformer_p_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_transformer_q_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_transformer_i_to_sigma;
 // component generic_branch
 PGM_API extern PGM_MetaComponent const* const PGM_def_asym_output_generic_branch;
 // attributes of asym_output generic_branch
@@ -633,6 +700,12 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_generic_branch
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_generic_branch_q_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_generic_branch_i_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_generic_branch_s_to;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_generic_branch_p_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_generic_branch_q_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_generic_branch_i_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_generic_branch_p_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_generic_branch_q_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_generic_branch_i_to_sigma;
 // component asym_line
 PGM_API extern PGM_MetaComponent const* const PGM_def_asym_output_asym_line;
 // attributes of asym_output asym_line
@@ -647,6 +720,12 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_asym_line_p_to
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_asym_line_q_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_asym_line_i_to;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_asym_line_s_to;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_asym_line_p_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_asym_line_q_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_asym_line_i_from_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_asym_line_p_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_asym_line_q_to_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_asym_line_i_to_sigma;
 // component transformer_tap_regulator
 PGM_API extern PGM_MetaComponent const* const PGM_def_asym_output_transformer_tap_regulator;
 // attributes of asym_output transformer_tap_regulator
@@ -674,6 +753,15 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_three_winding_
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_three_winding_transformer_q_3;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_three_winding_transformer_i_3;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_three_winding_transformer_s_3;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_three_winding_transformer_p_1_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_three_winding_transformer_q_1_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_three_winding_transformer_i_1_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_three_winding_transformer_p_2_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_three_winding_transformer_q_2_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_three_winding_transformer_i_2_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_three_winding_transformer_p_3_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_three_winding_transformer_q_3_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_three_winding_transformer_i_3_sigma;
 // component sym_load
 PGM_API extern PGM_MetaComponent const* const PGM_def_asym_output_sym_load;
 // attributes of asym_output sym_load

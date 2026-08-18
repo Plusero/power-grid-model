@@ -409,6 +409,7 @@ class PowerGridModel:
         error_tolerance: float = 1e-8,
         max_iterations: int = 20,
         calculation_method: CalculationMethod | str = CalculationMethod.iterative_linear,
+        calculate_uncertainty: bool = False,
         update_data: Dataset | list[Dataset] | None = None,
         threading: int = -1,
         output_component_types: ComponentAttributeMapping = None,
@@ -423,6 +424,7 @@ class PowerGridModel:
             error_tolerance=error_tolerance,
             max_iterations=max_iterations,
             calculation_method=calculation_method,
+            calculate_uncertainty=calculate_uncertainty,
             threading=threading,
             experimental_features=experimental_features,
         )
@@ -676,6 +678,7 @@ class PowerGridModel:
         error_tolerance: float = ...,
         max_iterations: int = ...,
         calculation_method: CalculationMethod | str = ...,
+        calculate_uncertainty: bool = ...,
         update_data: None = ...,
         threading: int = ...,
         output_component_types: set[ComponentTypeVar] | list[ComponentTypeVar] | None = ...,
@@ -690,6 +693,7 @@ class PowerGridModel:
         error_tolerance: float = ...,
         max_iterations: int = ...,
         calculation_method: CalculationMethod | str = ...,
+        calculate_uncertainty: bool = ...,
         update_data: None = ...,
         threading: int = ...,
         output_component_types: ComponentAttributeFilterOptions = ...,
@@ -704,6 +708,7 @@ class PowerGridModel:
         error_tolerance: float = ...,
         max_iterations: int = ...,
         calculation_method: CalculationMethod | str = ...,
+        calculate_uncertainty: bool = ...,
         update_data: None = ...,
         threading: int = ...,
         output_component_types: ComponentAttributeMappingDict = ...,
@@ -718,6 +723,7 @@ class PowerGridModel:
         error_tolerance: float = ...,
         max_iterations: int = ...,
         calculation_method: CalculationMethod | str = ...,
+        calculate_uncertainty: bool = ...,
         update_data: BatchDataset | list[BatchDataset] = ...,
         threading: int = ...,
         output_component_types: set[ComponentTypeVar] | list[ComponentTypeVar] | None = ...,
@@ -732,6 +738,7 @@ class PowerGridModel:
         error_tolerance: float = ...,
         max_iterations: int = ...,
         calculation_method: CalculationMethod | str = ...,
+        calculate_uncertainty: bool = ...,
         update_data: BatchDataset | list[BatchDataset] = ...,
         threading: int = ...,
         output_component_types: ComponentAttributeFilterOptions = ...,
@@ -746,6 +753,7 @@ class PowerGridModel:
         error_tolerance: float = ...,
         max_iterations: int = ...,
         calculation_method: CalculationMethod | str = ...,
+        calculate_uncertainty: bool = ...,
         update_data: BatchDataset | list[BatchDataset] = ...,
         threading: int = ...,
         output_component_types: ComponentAttributeMappingDict = ...,
@@ -759,6 +767,7 @@ class PowerGridModel:
         error_tolerance: float = 1e-8,
         max_iterations: int = 20,
         calculation_method: CalculationMethod | str = CalculationMethod.iterative_linear,
+        calculate_uncertainty: bool = False,
         update_data: BatchDataset | list[BatchDataset] | None = None,
         threading: int = -1,
         output_component_types: ComponentAttributeMapping = None,
@@ -779,6 +788,10 @@ class PowerGridModel:
             max_iterations (int, optional): Maximum number of iterations, applicable only when the calculation method
                 is iterative.
             calculation_method (an enumeration): Use iterative linear method.
+            calculate_uncertainty (bool, optional): Calculate first-order analytical standard deviations for node
+                voltage magnitude and angle, nodal active/reactive injection, and branch current and active/reactive
+                power. This is currently supported only by the iterative-linear method and uses PGM's adopted proper
+                complex-error model. Defaults to False.
             update_data (dict, optional):
                 None: Calculate state estimation once with the current model attributes.
 
@@ -847,6 +860,7 @@ class PowerGridModel:
             error_tolerance=error_tolerance,
             max_iterations=max_iterations,
             calculation_method=calculation_method,
+            calculate_uncertainty=calculate_uncertainty,
             update_data=update_data,
             threading=threading,
             output_component_types=output_component_types,

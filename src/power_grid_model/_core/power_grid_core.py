@@ -346,6 +346,10 @@ class PowerGridCore:
         pass  # pragma: no cover
 
     @make_c_binding
+    def set_calculate_uncertainty(self, opt: OptionsPtr, calculate_uncertainty: int) -> None:  # type: ignore[empty-body]
+        pass  # pragma: no cover
+
+    @make_c_binding
     def create_model(  # type: ignore[empty-body]
         self,
         system_frequency: float,
