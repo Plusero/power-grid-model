@@ -47,7 +47,13 @@ lint = [
     "reuse[charset-normalizer,chardet]", # license check
 ]
 
-example = ["ipykernel", "matplotlib", "SciencePlots", "scipy"]
+example = [
+    "ipykernel",
+    "matplotlib",
+    "pandapower>=3.5.4",
+    "SciencePlots",
+    "scipy",
+]
 
 dev = [
     { include-group = "test" },
