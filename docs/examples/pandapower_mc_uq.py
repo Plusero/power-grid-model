@@ -2,10 +2,14 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Pandapower WLS Monte Carlo uncertainty quantification for PGM examples."""
+"""Pandapower WLS Monte Carlo uncertainty quantification for PGM examples.
+
+See ``pandapower_mc_uq.md`` for the native-network mapping and fallback logic.
+"""
 
 from __future__ import annotations
 
+import copy
 import warnings
 from dataclasses import dataclass
 from time import perf_counter
@@ -43,6 +47,7 @@ class PandapowerModel:
     transformer_index: dict[int, int]
     transformer_side: dict[tuple[int, str], str]
     active_branch_ids: set[int]
+    network_source: str
 
 
 @dataclass
@@ -55,6 +60,7 @@ class PandapowerMonteCarloResult:
     measurement_count: int
     omitted_current_angle_count: int
     omitted_out_of_service_measurement_count: int
+    network_source: str
     failure_reason: str | None = None
 
 
@@ -226,8 +232,230 @@ def _build_links(model: PandapowerModel, input_data: dict[Any, Any]) -> None:
         )
 
 
-def build_pandapower_model(input_data: dict[Any, Any], *, system_frequency: float = 50.0) -> PandapowerModel:
-    """Convert the symmetric PGM components used by the UQ notebooks to pandapower."""
+def _validate_native_value(
+    name: str,
+    pgm_value: float,
+    pandapower_value: float,
+    *,
+    relative_tolerance: float = 1.0e-9,
+    absolute_tolerance: float = 1.0e-12,
+) -> None:
+    if not np.isclose(
+        pgm_value,
+        pandapower_value,
+        rtol=relative_tolerance,
+        atol=absolute_tolerance,
+        equal_nan=True,
+    ):
+        raise ValueError(f"Native pandapower {name} mismatch: PGM={pgm_value}, pandapower={pandapower_value}")
+
+
+def _native_terminal_status(
+    net: Any,
+    *,
+    element_type: str,
+    element_index: int,
+    bus_index: int,
+    element_in_service: bool,
+) -> bool:
+    if not element_in_service:
+        return False
+    switches = net.switch[
+        (net.switch["et"] == element_type) & (net.switch["element"] == element_index) & (net.switch["bus"] == bus_index)
+    ]
+    return bool(switches["closed"].all()) if len(switches) else True
+
+
+def _map_native_pandapower_model(  # noqa: PLR0912, PLR0915
+    input_data: dict[Any, Any], pandapower_network: Any
+) -> PandapowerModel:
+    net = copy.deepcopy(pandapower_network)
+    model = PandapowerModel(
+        net=net,
+        node_index={},
+        line_index={},
+        transformer_index={},
+        transformer_side={},
+        active_branch_ids=set(),
+        network_source="native pandapower network",
+    )
+
+    nodes = _component(input_data, ComponentType.node)
+    lines = _component(input_data, ComponentType.line)
+    transformers = _component(input_data, ComponentType.transformer)
+    sources = _component(input_data, ComponentType.source)
+    if nodes is None:
+        raise KeyError("Native pandapower mapping requires PGM node data")
+    component_counts = {
+        "bus": (len(nodes), len(net.bus)),
+        "line": (0 if lines is None else len(lines), len(net.line)),
+        "trafo": (0 if transformers is None else len(transformers), len(net.trafo)),
+        "ext_grid": (0 if sources is None else len(sources), len(net.ext_grid)),
+    }
+    mismatched_counts = {name: counts for name, counts in component_counts.items() if counts[0] != counts[1]}
+    if mismatched_counts:
+        raise ValueError(f"Native pandapower component-count mismatch (PGM, pandapower): {mismatched_counts}")
+
+    native_bus_to_pgm: dict[int, int] = {}
+    for pgm_node, (native_bus_index, native_bus) in zip(nodes, net.bus.iterrows(), strict=True):
+        pgm_node_id = int(pgm_node[AttributeType.id])
+        model.node_index[pgm_node_id] = int(native_bus_index)
+        native_bus_to_pgm[int(native_bus_index)] = pgm_node_id
+        _validate_native_value(
+            f"bus {pgm_node_id} rated voltage",
+            float(pgm_node[AttributeType.u_rated]),
+            float(native_bus["vn_kv"]) * 1.0e3,
+        )
+
+    if sources is not None:
+        for pgm_source, (_, native_source) in zip(sources, net.ext_grid.iterrows(), strict=True):
+            pgm_source_node = int(pgm_source[AttributeType.node])
+            native_source_node = native_bus_to_pgm[int(native_source["bus"])]
+            if pgm_source_node != native_source_node:
+                raise ValueError(
+                    f"Native pandapower source-node mismatch: PGM={pgm_source_node}, pandapower={native_source_node}"
+                )
+
+    if lines is not None:
+        for pgm_line, (native_line_index, native_line) in zip(lines, net.line.iterrows(), strict=True):
+            pgm_line_id = int(pgm_line[AttributeType.id])
+            model.line_index[pgm_line_id] = int(native_line_index)
+            pgm_endpoints = (
+                int(pgm_line[AttributeType.from_node]),
+                int(pgm_line[AttributeType.to_node]),
+            )
+            native_endpoints = (
+                native_bus_to_pgm[int(native_line["from_bus"])],
+                native_bus_to_pgm[int(native_line["to_bus"])],
+            )
+            if pgm_endpoints != native_endpoints:
+                raise ValueError(
+                    f"Native pandapower line {pgm_line_id} endpoint mismatch: "
+                    f"PGM={pgm_endpoints}, pandapower={native_endpoints}"
+                )
+            length = float(native_line["length_km"])
+            _validate_native_value(
+                f"line {pgm_line_id} resistance",
+                float(pgm_line[AttributeType.r1]),
+                float(native_line["r_ohm_per_km"]) * length,
+            )
+            _validate_native_value(
+                f"line {pgm_line_id} reactance",
+                float(pgm_line[AttributeType.x1]),
+                float(native_line["x_ohm_per_km"]) * length,
+            )
+            _validate_native_value(
+                f"line {pgm_line_id} capacitance",
+                float(pgm_line[AttributeType.c1]),
+                float(native_line["c_nf_per_km"]) * length * 1.0e-9,
+            )
+            native_from_status = _native_terminal_status(
+                net,
+                element_type="l",
+                element_index=int(native_line_index),
+                bus_index=int(native_line["from_bus"]),
+                element_in_service=bool(native_line["in_service"]),
+            )
+            native_to_status = _native_terminal_status(
+                net,
+                element_type="l",
+                element_index=int(native_line_index),
+                bus_index=int(native_line["to_bus"]),
+                element_in_service=bool(native_line["in_service"]),
+            )
+            pgm_status = (
+                _terminal_status(pgm_line, "from_status"),
+                _terminal_status(pgm_line, "to_status"),
+            )
+            native_status = (native_from_status, native_to_status)
+            if pgm_status != native_status:
+                raise ValueError(
+                    f"Native pandapower line {pgm_line_id} terminal-status mismatch: "
+                    f"PGM={pgm_status}, pandapower={native_status}"
+                )
+            if all(native_status):
+                model.active_branch_ids.add(pgm_line_id)
+            else:
+                model.net.line.at[native_line_index, "in_service"] = False
+
+    if transformers is not None:
+        for pgm_transformer, (native_transformer_index, native_transformer) in zip(
+            transformers, net.trafo.iterrows(), strict=True
+        ):
+            pgm_transformer_id = int(pgm_transformer[AttributeType.id])
+            model.transformer_index[pgm_transformer_id] = int(native_transformer_index)
+            native_hv_node = native_bus_to_pgm[int(native_transformer["hv_bus"])]
+            native_lv_node = native_bus_to_pgm[int(native_transformer["lv_bus"])]
+            pgm_from_node = int(pgm_transformer[AttributeType.from_node])
+            pgm_to_node = int(pgm_transformer[AttributeType.to_node])
+            if {pgm_from_node, pgm_to_node} != {native_hv_node, native_lv_node}:
+                raise ValueError(
+                    f"Native pandapower transformer {pgm_transformer_id} endpoint mismatch: "
+                    f"PGM={(pgm_from_node, pgm_to_node)}, "
+                    f"pandapower={(native_hv_node, native_lv_node)}"
+                )
+            model.transformer_side[pgm_transformer_id, "from"] = "hv" if pgm_from_node == native_hv_node else "lv"
+            model.transformer_side[pgm_transformer_id, "to"] = "hv" if pgm_to_node == native_hv_node else "lv"
+            _validate_native_value(
+                f"transformer {pgm_transformer_id} HV voltage",
+                max(
+                    float(pgm_transformer[AttributeType.u1]),
+                    float(pgm_transformer[AttributeType.u2]),
+                ),
+                float(native_transformer["vn_hv_kv"]) * 1.0e3,
+            )
+            _validate_native_value(
+                f"transformer {pgm_transformer_id} LV voltage",
+                min(
+                    float(pgm_transformer[AttributeType.u1]),
+                    float(pgm_transformer[AttributeType.u2]),
+                ),
+                float(native_transformer["vn_lv_kv"]) * 1.0e3,
+            )
+            native_hv_status = _native_terminal_status(
+                net,
+                element_type="t",
+                element_index=int(native_transformer_index),
+                bus_index=int(native_transformer["hv_bus"]),
+                element_in_service=bool(native_transformer["in_service"]),
+            )
+            native_lv_status = _native_terminal_status(
+                net,
+                element_type="t",
+                element_index=int(native_transformer_index),
+                bus_index=int(native_transformer["lv_bus"]),
+                element_in_service=bool(native_transformer["in_service"]),
+            )
+            native_status_by_side = {"hv": native_hv_status, "lv": native_lv_status}
+            native_status = (
+                native_status_by_side[model.transformer_side[pgm_transformer_id, "from"]],
+                native_status_by_side[model.transformer_side[pgm_transformer_id, "to"]],
+            )
+            pgm_status = (
+                _terminal_status(pgm_transformer, "from_status"),
+                _terminal_status(pgm_transformer, "to_status"),
+            )
+            if pgm_status != native_status:
+                raise ValueError(
+                    f"Native pandapower transformer {pgm_transformer_id} terminal-status mismatch: "
+                    f"PGM={pgm_status}, pandapower={native_status}"
+                )
+            if all(native_status):
+                model.active_branch_ids.add(pgm_transformer_id)
+            else:
+                model.net.trafo.at[native_transformer_index, "in_service"] = False
+
+    model.net.measurement = model.net.measurement.iloc[0:0].copy()
+    return model
+
+
+def build_pandapower_model(
+    input_data: dict[Any, Any],
+    *,
+    pandapower_network: Any | None = None,
+    system_frequency: float = 50.0,
+) -> PandapowerModel:
+    """Map a native pandapower network or convert symmetric PGM components as a fallback."""
 
     unsupported = (
         ComponentType.asym_load,
@@ -244,6 +472,9 @@ def build_pandapower_model(input_data: dict[Any, Any], *, system_frequency: floa
     if present_unsupported:
         raise NotImplementedError(f"Pandapower UQ conversion does not support {present_unsupported}")
 
+    if pandapower_network is not None:
+        return _map_native_pandapower_model(input_data, pandapower_network)
+
     model = PandapowerModel(
         net=pp.create_empty_network(sn_mva=1.0, f_hz=system_frequency),
         node_index={},
@@ -251,6 +482,7 @@ def build_pandapower_model(input_data: dict[Any, Any], *, system_frequency: floa
         transformer_index={},
         transformer_side={},
         active_branch_ids=set(),
+        network_source="PGM-to-pandapower fallback conversion",
     )
     _build_nodes(model, input_data)
     _build_sources(model, input_data)
@@ -482,10 +714,11 @@ def _copy_estimation_outputs(
                 )
 
 
-def run_pandapower_monte_carlo(
+def run_pandapower_monte_carlo(  # noqa: PLR0913
     input_data: dict[Any, Any],
     updates: dict[Any, Any],
     *,
+    pandapower_network: Any | None = None,
     sample_count: int | None = None,
     tolerance: float = 1.0e-6,
     maximum_iterations: int = 50,
@@ -503,7 +736,7 @@ def run_pandapower_monte_carlo(
     if sample_count < _MINIMUM_MONTE_CARLO_SAMPLES or sample_count > available_sample_count:
         raise ValueError("sample_count must be between 2 and the available update count")
 
-    model = build_pandapower_model(input_data)
+    model = build_pandapower_model(input_data, pandapower_network=pandapower_network)
     bindings, omitted_current_angle_count, omitted_out_of_service_measurement_count = _add_measurements(
         model, input_data
     )
@@ -514,6 +747,7 @@ def run_pandapower_monte_carlo(
         measurement_count=len(bindings),
         omitted_current_angle_count=omitted_current_angle_count,
         omitted_out_of_service_measurement_count=omitted_out_of_service_measurement_count,
+        network_source=model.network_source,
     )
     current_sensors = _component(input_data, ComponentType.sym_current_sensor)
     power_sensors = _component(input_data, ComponentType.sym_power_sensor)
