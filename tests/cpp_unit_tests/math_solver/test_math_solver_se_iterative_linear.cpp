@@ -96,4 +96,49 @@ TEST_CASE("Iterative linear SE uncertainty scales with measurement variance and 
         check_scaled_sigma(branch_output.i_t_sigma, scaled_branch_output.i_t_sigma);
     }
 }
+
+TEST_CASE("Asymmetric iterative linear SE bus-injection uncertainty scales with measurement variance") {
+    constexpr double error_tolerance{1e-10};
+    constexpr Idx num_iter{20};
+
+    SESolverTestGrid<asymmetric_t> const grid;
+    auto const topo = grid.se_topo_power_sensors();
+    YBus<asymmetric_t> const y_bus{topo, grid.param()};
+    IterativeLinearSESolver<asymmetric_t> solver{y_bus, topo};
+    auto log = get_logger();
+
+    auto const input = grid.se_input_angle();
+    auto scaled_input = input;
+    for (auto& measurement : scaled_input.measured_voltage) {
+        measurement.variance *= 4.0;
+    }
+    auto const scale_power_variances = [](auto& measurements) {
+        for (auto& measurement : measurements) {
+            measurement.real_component.variance *= 4.0;
+            measurement.imag_component.variance *= 4.0;
+        }
+    };
+    scale_power_variances(scaled_input.measured_source_power);
+    scale_power_variances(scaled_input.measured_load_gen_power);
+    scale_power_variances(scaled_input.measured_shunt_power);
+    scale_power_variances(scaled_input.measured_branch_from_power);
+    scale_power_variances(scaled_input.measured_branch_to_power);
+    scale_power_variances(scaled_input.measured_bus_injection);
+
+    auto const output = solver.run_state_estimation(y_bus, input, error_tolerance, num_iter, true, log);
+    auto const scaled_output = solver.run_state_estimation(y_bus, scaled_input, error_tolerance, num_iter, true, log);
+
+    for (Idx bus = 0; bus != std::ssize(output.bus_uncertainty); ++bus) {
+        for (Idx phase = 0; phase != 3; ++phase) {
+            CAPTURE(bus);
+            CAPTURE(phase);
+            double const p_sigma = output.bus_uncertainty[bus].p_sigma(phase);
+            double const q_sigma = output.bus_uncertainty[bus].q_sigma(phase);
+            REQUIRE(std::isfinite(p_sigma));
+            REQUIRE(std::isfinite(q_sigma));
+            CHECK(scaled_output.bus_uncertainty[bus].p_sigma(phase) == doctest::Approx(2.0 * p_sigma).epsilon(1e-9));
+            CHECK(scaled_output.bus_uncertainty[bus].q_sigma(phase) == doctest::Approx(2.0 * q_sigma).epsilon(1e-9));
+        }
+    }
+}
 } // namespace power_grid_model::math_solver

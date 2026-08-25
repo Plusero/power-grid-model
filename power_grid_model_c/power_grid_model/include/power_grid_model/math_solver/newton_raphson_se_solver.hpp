@@ -132,6 +132,9 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
     using ComplexTerminalJacobian = Eigen::Matrix<DoubleComplex, n_phase_, terminal_state_size_>;
     using RealTerminalJacobian = Eigen::Matrix<double, n_phase_, terminal_state_size_>;
     using VirtualAngleSolutions = std::array<std::vector<NRSERhs<sym>>, n_phase_>;
+    using SparseSolverType = SparseLUSolver<NRSEGainBlock<sym>, NRSERhs<sym>, NRSEUnknown<sym>>;
+    using UncertaintyMatrix = ExtendedSparseLUData<NRSEGainBlock<sym>, NRSERhs<sym>, NRSEUnknown<sym>>;
+    using SparseStateVector = std::pair<Idx, StateVector>;
 
     struct UncertaintyContext {
         double variance_normalization{1.0};
@@ -266,8 +269,8 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
     // voltage of current iteration
     std::vector<NRSERhs<sym>> x_;
     // solver
-    SparseLUSolver<NRSEGainBlock<sym>, NRSERhs<sym>, NRSEUnknown<sym>> sparse_solver_;
-    SparseLUSolver<NRSEGainBlock<sym>, NRSERhs<sym>, NRSEUnknown<sym>>::BlockPermArray perm_;
+    SparseSolverType sparse_solver_;
+    SparseSolverType::BlockPermArray perm_;
 
     void initialize_unknown(ComplexValueVector<sym>& initial_u, MeasuredValues<sym> const& measured_values) {
         using statistics::detail::cabs_or_real;
@@ -850,10 +853,6 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         }
     }
 
-    template <class Derived> static void add_state_rhs(NRSERhs<sym>& rhs, Eigen::MatrixBase<Derived> const& state_row) {
-        rhs.template topRows<state_size_>() += state_row.transpose().array();
-    }
-
     static double variance_to_sigma(double variance, double scale) {
         double const tolerance = 1000.0 * std::numeric_limits<double>::epsilon() * std::max(1.0, scale);
         if (!std::isfinite(variance) || variance < -tolerance) {
@@ -862,17 +861,9 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         return std::sqrt(std::max(0.0, variance));
     }
 
-    static Idx find_lu_entry(YBus<sym> const& y_bus, Idx row, Idx col) {
-        for (Idx idx = y_bus.row_indptr_lu()[row]; idx != y_bus.row_indptr_lu()[row + 1]; ++idx) {
-            if (y_bus.col_indices_lu()[idx] == col) {
-                return idx;
-            }
-        }
-        throw SparseMatrixError{};
-    }
-
     VirtualAngleSolutions calculate_virtual_angle_solutions(MeasuredValues<sym> const& measured_values,
-                                                            double& virtual_angle_weight) {
+                                                            double& virtual_angle_weight,
+                                                            UncertaintyMatrix& uncertainty_matrix) {
         VirtualAngleSolutions solutions;
         if (measured_values.has_angle()) {
             return solutions;
@@ -888,12 +879,14 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
             std::ranges::for_each(rhs, [](auto& value) { value.clear(); });
             rhs[virtual_angle_bus](phase, 0) = 1.0;
             solutions[phase].resize(n_bus_);
-            sparse_solver_.solve_with_prefactorized_matrix(data_gain_, perm_, rhs, solutions[phase]);
+            uncertainty_matrix.solver.solve_with_prefactorized_matrix(
+                uncertainty_matrix.data, uncertainty_matrix.permutation, rhs, solutions[phase]);
         }
         return solutions;
     }
 
-    std::vector<StateVector> calculate_reference_covariance(UncertaintyContext const& context) {
+    std::vector<StateVector> calculate_reference_covariance(UncertaintyContext const& context,
+                                                            UncertaintyMatrix& uncertainty_matrix) {
         if (!context.has_virtual_angles()) {
             return {};
         }
@@ -902,7 +895,8 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         std::vector<NRSERhs<sym>> rhs(n_bus_);
         std::vector<NRSERhs<sym>> solution(n_bus_);
         rhs[reference_bus](0, 0) = 1.0;
-        sparse_solver_.solve_with_prefactorized_matrix(data_gain_, perm_, rhs, solution);
+        uncertainty_matrix.solver.solve_with_prefactorized_matrix(uncertainty_matrix.data,
+                                                                  uncertainty_matrix.permutation, rhs, solution);
 
         std::vector<StateVector> reference_covariance(n_bus_);
         for (Idx bus = 0; bus != n_bus_; ++bus) {
@@ -917,13 +911,22 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         return reference_covariance;
     }
 
-    StateMatrix selected_state_covariance(YBus<sym> const& y_bus, Idx row, Idx col, UncertaintyContext const& context) {
+    static StateMatrix raw_state_covariance(UncertaintyMatrix const& uncertainty_matrix, Idx row, Idx col) {
         if (row == disconnected || col == disconnected) {
             return StateMatrix::Zero();
         }
 
-        Idx const idx = find_lu_entry(y_bus, row, col);
-        StateMatrix covariance = data_gain_[idx].matrix().template topLeftCorner<state_size_, state_size_>();
+        Idx const idx = uncertainty_matrix.structure.find_entry(row, col);
+        return uncertainty_matrix.data[idx].matrix().template topLeftCorner<state_size_, state_size_>();
+    }
+
+    static StateMatrix selected_state_covariance(UncertaintyMatrix const& uncertainty_matrix, Idx row, Idx col,
+                                                 UncertaintyContext const& context) {
+        if (row == disconnected || col == disconnected) {
+            return StateMatrix::Zero();
+        }
+
+        StateMatrix covariance = raw_state_covariance(uncertainty_matrix, row, col);
         if (context.has_virtual_angles()) {
             for (Idx phase = 0; phase != n_phase_; ++phase) {
                 auto const& virtual_solution = context.virtual_angle_solutions[phase];
@@ -934,8 +937,9 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         return context.variance_normalization * covariance;
     }
 
-    StateMatrix reported_state_covariance(YBus<sym> const& y_bus, Idx row, Idx col, UncertaintyContext const& context) {
-        StateMatrix covariance = selected_state_covariance(y_bus, row, col, context);
+    StateMatrix reported_state_covariance(UncertaintyMatrix const& uncertainty_matrix, Idx row, Idx col,
+                                          UncertaintyContext const& context) {
+        StateMatrix covariance = selected_state_covariance(uncertainty_matrix, row, col, context);
         if (!context.uses_angle_reference() || row == disconnected || col == disconnected) {
             return covariance;
         }
@@ -950,12 +954,14 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         return covariance;
     }
 
-    std::pair<double, double> covariance_quadratic_form(std::vector<NRSERhs<sym>> const& rhs,
-                                                        std::vector<NRSERhs<sym>> const& solution,
+    std::pair<double, double> covariance_quadratic_form(std::vector<SparseStateVector> const& rhs,
+                                                        UncertaintyMatrix const& uncertainty_matrix,
                                                         UncertaintyContext const& context) const {
         double variance{};
-        for (Idx bus = 0; bus != n_bus_; ++bus) {
-            variance += state_vector(rhs[bus]).dot(state_vector(solution[bus]));
+        for (auto const& [left_bus, left_rhs] : rhs) {
+            for (auto const& [right_bus, right_rhs] : rhs) {
+                variance += left_rhs.dot(raw_state_covariance(uncertainty_matrix, left_bus, right_bus) * right_rhs);
+            }
         }
         double scale = std::abs(variance);
 
@@ -963,8 +969,8 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
             for (Idx phase = 0; phase != n_phase_; ++phase) {
                 double projection{};
                 auto const& virtual_solution = context.virtual_angle_solutions[phase];
-                for (Idx bus = 0; bus != n_bus_; ++bus) {
-                    projection += state_vector(rhs[bus]).dot(state_vector(virtual_solution[bus]));
+                for (auto const& [bus, rhs_block] : rhs) {
+                    projection += rhs_block.dot(state_vector(virtual_solution[bus]));
                 }
                 double const correction = context.virtual_angle_weight * projection * projection;
                 variance -= correction;
@@ -983,13 +989,8 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         return jacobian;
     }
 
-    void calculate_bus_injection_uncertainty(YBus<sym> const& y_bus, UncertaintyContext const& context,
-                                             SolverOutput<sym>& output) {
-        std::vector<NRSERhs<sym>> rhs_p(n_bus_);
-        std::vector<NRSERhs<sym>> rhs_q(n_bus_);
-        std::vector<NRSERhs<sym>> solution_p(n_bus_);
-        std::vector<NRSERhs<sym>> solution_q(n_bus_);
-
+    void calculate_bus_injection_uncertainty(YBus<sym> const& y_bus, UncertaintyMatrix const& uncertainty_matrix,
+                                             UncertaintyContext const& context, SolverOutput<sym>& output) {
         for (Idx bus = 0; bus != n_bus_; ++bus) {
             PhaseVector current = PhaseVector::Zero();
             for (Idx idx = y_bus.row_indptr()[bus]; idx != y_bus.row_indptr()[bus + 1]; ++idx) {
@@ -1012,27 +1013,27 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
             }
 
             for (Idx phase = 0; phase != n_phase_; ++phase) {
-                std::ranges::for_each(rhs_p, [](auto& value) { value.clear(); });
-                std::ranges::for_each(rhs_q, [](auto& value) { value.clear(); });
+                std::vector<SparseStateVector> rhs_p;
+                std::vector<SparseStateVector> rhs_q;
+                rhs_p.reserve(power_jacobian_blocks.size());
+                rhs_q.reserve(power_jacobian_blocks.size());
                 for (auto const& [col, jacobian] : power_jacobian_blocks) {
-                    add_state_rhs(rhs_p[col], jacobian.real().row(phase));
-                    add_state_rhs(rhs_q[col], jacobian.imag().row(phase));
+                    rhs_p.emplace_back(col, jacobian.real().row(phase).transpose());
+                    rhs_q.emplace_back(col, jacobian.imag().row(phase).transpose());
                 }
 
-                sparse_solver_.solve_with_prefactorized_matrix(data_gain_, perm_, rhs_p, solution_p);
-                sparse_solver_.solve_with_prefactorized_matrix(data_gain_, perm_, rhs_q, solution_q);
-                auto const [p_variance, p_scale] = covariance_quadratic_form(rhs_p, solution_p, context);
-                auto const [q_variance, q_scale] = covariance_quadratic_form(rhs_q, solution_q, context);
+                auto const [p_variance, p_scale] = covariance_quadratic_form(rhs_p, uncertainty_matrix, context);
+                auto const [q_variance, q_scale] = covariance_quadratic_form(rhs_q, uncertainty_matrix, context);
                 set_phase_value(output.bus_uncertainty[bus].p_sigma, phase, variance_to_sigma(p_variance, p_scale));
                 set_phase_value(output.bus_uncertainty[bus].q_sigma, phase, variance_to_sigma(q_variance, q_scale));
             }
         }
     }
 
-    void calculate_voltage_uncertainty(YBus<sym> const& y_bus, UncertaintyContext const& context,
+    void calculate_voltage_uncertainty(UncertaintyMatrix const& uncertainty_matrix, UncertaintyContext const& context,
                                        SolverOutput<sym>& output) {
         for (Idx bus = 0; bus != n_bus_; ++bus) {
-            StateMatrix const covariance = reported_state_covariance(y_bus, bus, bus, context);
+            StateMatrix const covariance = reported_state_covariance(uncertainty_matrix, bus, bus, context);
             PhaseVector const voltage = as_phase_vector(output.u[bus]);
             double const scale = covariance.cwiseAbs().maxCoeff();
             for (Idx phase = 0; phase != n_phase_; ++phase) {
@@ -1082,21 +1083,21 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         }
     }
 
-    void calculate_branch_uncertainty(YBus<sym> const& y_bus, UncertaintyContext const& context,
-                                      SolverOutput<sym>& output) {
+    void calculate_branch_uncertainty(YBus<sym> const& y_bus, UncertaintyMatrix const& uncertainty_matrix,
+                                      UncertaintyContext const& context, SolverOutput<sym>& output) {
         auto const& branch_bus_idx = y_bus.math_topology().branch_bus_idx;
         auto const& branch_param = y_bus.math_model_param().branch_param;
         for (Idx branch = 0; branch != std::ssize(branch_bus_idx); ++branch) {
             auto const [from, to] = branch_bus_idx[branch];
             TerminalStateMatrix covariance = TerminalStateMatrix::Zero();
             covariance.template block<state_size_, state_size_>(0, 0) =
-                reported_state_covariance(y_bus, from, from, context);
+                reported_state_covariance(uncertainty_matrix, from, from, context);
             covariance.template block<state_size_, state_size_>(0, state_size_) =
-                reported_state_covariance(y_bus, from, to, context);
+                reported_state_covariance(uncertainty_matrix, from, to, context);
             covariance.template block<state_size_, state_size_>(state_size_, 0) =
-                reported_state_covariance(y_bus, to, from, context);
+                reported_state_covariance(uncertainty_matrix, to, from, context);
             covariance.template block<state_size_, state_size_>(state_size_, state_size_) =
-                reported_state_covariance(y_bus, to, to, context);
+                reported_state_covariance(uncertainty_matrix, to, to, context);
 
             ComplexTerminalJacobian d_u = ComplexTerminalJacobian::Zero();
             PhaseVector from_voltage = PhaseVector::Zero();
@@ -1136,22 +1137,23 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         // The iteration factors precede its final accepted update. Rebuild and factor the augmented Gauss-Newton
         // matrix at the returned state, without numerical pivot perturbation, before propagating its covariance.
         prepare_matrix_and_rhs(y_bus, measured_values, output.u);
-        sparse_solver_.prefactorize(data_gain_, perm_);
+        UncertaintyMatrix uncertainty_matrix{y_bus.row_indptr_lu(), y_bus.col_indices_lu(), y_bus.row_indptr(),
+                                             y_bus.col_indices(), data_gain_};
+        uncertainty_matrix.solver.prefactorize(uncertainty_matrix.data, uncertainty_matrix.permutation);
 
         output.bus_uncertainty.resize(n_bus_);
         UncertaintyContext context;
         context.variance_normalization = measured_values.variance_normalization();
         context.virtual_angle_solutions =
-            calculate_virtual_angle_solutions(measured_values, context.virtual_angle_weight);
-        context.reference_covariance = calculate_reference_covariance(context);
-
-        // Injection Jacobians span closed bus neighborhoods and require quadratic-form solves while the factors exist.
-        calculate_bus_injection_uncertainty(y_bus, context, output);
+            calculate_virtual_angle_solutions(measured_values, context.virtual_angle_weight, uncertainty_matrix);
+        context.reference_covariance = calculate_reference_covariance(context, uncertainty_matrix);
 
         // The selected-inverse sweep is destructive, so it follows every solve with the fresh factors.
-        sparse_solver_.inplace_selective_inverse_with_prefactorized_matrix(data_gain_, perm_);
-        calculate_voltage_uncertainty(y_bus, context, output);
-        calculate_branch_uncertainty(y_bus, context, output);
+        uncertainty_matrix.solver.inplace_selective_inverse_with_prefactorized_matrix(uncertainty_matrix.data,
+                                                                                      uncertainty_matrix.permutation);
+        calculate_bus_injection_uncertainty(y_bus, uncertainty_matrix, context, output);
+        calculate_voltage_uncertainty(uncertainty_matrix, context, output);
+        calculate_branch_uncertainty(y_bus, uncertainty_matrix, context, output);
     }
 
     double iterate_unknown(ComplexValueVector<sym>& u, MeasuredValues<sym> measured_values) {
