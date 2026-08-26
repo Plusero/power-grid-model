@@ -20,6 +20,7 @@
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -57,6 +58,99 @@ inline void perturb_pivot_if_needed(double perturb_threshold, Scalar& value, dou
 // Left-lower and left-upper solves are commonly called forward and backward substitution, respectively.
 enum class TriangularSolveSide : int8_t { left, right };
 enum class TriangularFactor : int8_t { lower, upper };
+
+// Sparse structure used when selected inverse entries are required outside the original factor pattern.
+// `map_to_source` maps every entry back to the original sparse matrix, or contains -1 for structural zeros.
+struct ExtendedSparseMatrixStructure {
+    IdxVector row_indptr{};
+    IdxVector col_indices{};
+    IdxVector diag{};
+    IdxVector map_to_source{};
+
+    Idx find_entry(Idx row, Idx col) const {
+        auto const first = col_indices.begin() + row_indptr[row];
+        auto const last = col_indices.begin() + row_indptr[row + 1];
+        auto const found = std::lower_bound(first, last, col);
+        if (found == last || *found != col) {
+            throw SparseMatrixError{};
+        }
+        return narrow_cast<Idx>(std::distance(col_indices.begin(), found));
+    }
+};
+
+// Extend an already filled symmetric factor pattern with cliques over every supplied neighborhood, then compute
+// the additional symbolic fill required by the existing elimination order. This makes every pair of variables in a
+// neighborhood available to the selected-inverse sweep without materializing the full inverse.
+inline ExtendedSparseMatrixStructure
+build_extended_covariance_structure(std::span<Idx const> source_row_indptr, std::span<Idx const> source_col_indices,
+                                    std::span<Idx const> neighborhood_row_indptr,
+                                    std::span<Idx const> neighborhood_col_indices) {
+    Idx const size = narrow_cast<Idx>(source_row_indptr.size()) - 1;
+    assert(size >= 0);
+    assert(std::ssize(neighborhood_row_indptr) == size + 1);
+
+    std::vector<IdxVector> adjacency(size);
+    for (Idx row = 0; row != size; ++row) {
+        adjacency[row].insert(adjacency[row].end(), source_col_indices.begin() + source_row_indptr[row],
+                              source_col_indices.begin() + source_row_indptr[row + 1]);
+
+        auto const neighborhood_begin = neighborhood_col_indices.begin() + neighborhood_row_indptr[row];
+        auto const neighborhood_end = neighborhood_col_indices.begin() + neighborhood_row_indptr[row + 1];
+        for (auto first = neighborhood_begin; first != neighborhood_end; ++first) {
+            for (auto second = first + 1; second != neighborhood_end; ++second) {
+                if (*first == *second) {
+                    continue;
+                }
+                adjacency[*first].push_back(*second);
+                adjacency[*second].push_back(*first);
+            }
+        }
+    }
+
+    // Symbolic Gaussian elimination under the existing ordering. Only future neighbors need to be made a clique.
+    for (Idx pivot = 0; pivot != size; ++pivot) {
+        auto& pivot_adjacency = adjacency[pivot];
+        std::ranges::sort(pivot_adjacency);
+        auto const unique_end = std::ranges::unique(pivot_adjacency).begin();
+        pivot_adjacency.erase(unique_end, pivot_adjacency.end());
+
+        auto const first_future = std::ranges::upper_bound(pivot_adjacency, pivot);
+        for (auto first = first_future; first != pivot_adjacency.end(); ++first) {
+            for (auto second = first + 1; second != pivot_adjacency.end(); ++second) {
+                adjacency[*first].push_back(*second);
+                adjacency[*second].push_back(*first);
+            }
+        }
+    }
+
+    ExtendedSparseMatrixStructure structure;
+    structure.row_indptr.resize(size + 1);
+    structure.diag.resize(size);
+    for (Idx row = 0; row != size; ++row) {
+        auto& row_adjacency = adjacency[row];
+        std::ranges::sort(row_adjacency);
+        auto const unique_end = std::ranges::unique(row_adjacency).begin();
+        row_adjacency.erase(unique_end, row_adjacency.end());
+        assert(std::ranges::binary_search(row_adjacency, row));
+
+        structure.row_indptr[row] = narrow_cast<Idx>(structure.col_indices.size());
+        auto source_idx = source_row_indptr[row];
+        Idx const source_end = source_row_indptr[row + 1];
+        for (Idx const col : row_adjacency) {
+            while (source_idx != source_end && source_col_indices[source_idx] < col) {
+                ++source_idx;
+            }
+            structure.col_indices.push_back(col);
+            structure.map_to_source.push_back(
+                source_idx != source_end && source_col_indices[source_idx] == col ? source_idx : Idx{-1});
+            if (col == row) {
+                structure.diag[row] = narrow_cast<Idx>(structure.col_indices.size()) - 1;
+            }
+        }
+    }
+    structure.row_indptr[size] = narrow_cast<Idx>(structure.col_indices.size());
+    return structure;
+}
 
 // Dense LU factorization class
 // The implementation of the Dense LU factorization was derived from the Eigen library
@@ -316,6 +410,8 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
             solve_once(data, block_perm_array, rhs, x);
         }
     }
+
+    bool has_pivot_perturbation() const noexcept { return has_pivot_perturbation_; }
 
     // Compute Takahashi dependency blocks over the solver's stored sparse pattern
     // row_indptr_/col_indices_. This pattern includes fill-ins and can be larger
@@ -698,7 +794,8 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
         // Column below pivot: replace L_kp with Z_kp = -(sum_m Z_km * L_mp) * L_p^-1.
         for (Idx k_offset = 0; k_offset < n_off_diagonal; ++k_offset) {
             Idx const z_row = col_indices_[u_start + k_offset];
-            Tensor sum = Tensor::Zero();
+            Tensor sum{};
+            sum.setZero();
             Idx z_idx = l_indices[k_offset];
             for (Idx m_offset = 0; m_offset < n_off_diagonal; ++m_offset) {
                 Idx const z_col = col_indices_[u_start + m_offset];
@@ -711,7 +808,8 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
         // Row right of pivot: replace U_pj with Z_pj = -U_p^-1 * sum_m U_pm * Z_mj.
         for (Idx j_offset = 0; j_offset < n_off_diagonal; ++j_offset) {
             Idx const z_col = col_indices_[u_start + j_offset];
-            Tensor sum = Tensor::Zero();
+            Tensor sum{};
+            sum.setZero();
             for (Idx m_offset = 0; m_offset < n_off_diagonal; ++m_offset) {
                 Idx const z_row = col_indices_[u_start + m_offset];
                 Idx const z_idx = find_entry(z_row, z_col, l_indices[m_offset] + 1, row_indptr_[z_row + 1]);
@@ -721,7 +819,8 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
         }
 
         // Diagonal last: Z_pp = (L_p * U_p)^-1 - U_p^-1 * sum_m U_pm * Z_mp.
-        Tensor sum = Tensor::Zero();
+        Tensor sum{};
+        sum.setZero();
         for (Idx m_offset = 0; m_offset < n_off_diagonal; ++m_offset) {
             sum += dot(u_row[m_offset], data[l_indices[m_offset]]);
         }
@@ -825,6 +924,40 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
             }
         }
     }
+};
+
+template <class Tensor, class RHSVector, class XVector> struct ExtendedSparseLUData {
+    using Solver = SparseLUSolver<Tensor, RHSVector, XVector>;
+    using BlockPermArray = typename Solver::BlockPermArray;
+
+    ExtendedSparseMatrixStructure structure;
+    std::vector<Tensor> data;
+    Solver solver;
+    BlockPermArray permutation;
+
+    ExtendedSparseLUData(std::span<Idx const> source_row_indptr, std::span<Idx const> source_col_indices,
+                         std::span<Idx const> neighborhood_row_indptr, std::span<Idx const> neighborhood_col_indices,
+                         std::vector<Tensor> const& source_data)
+        : structure{build_extended_covariance_structure(source_row_indptr, source_col_indices, neighborhood_row_indptr,
+                                                        neighborhood_col_indices)},
+          data(structure.col_indices.size()),
+          solver{structure.row_indptr, structure.col_indices, structure.diag},
+          permutation(structure.diag.size()) {
+        assert(std::ssize(source_data) == source_row_indptr.back());
+        for (Idx idx = 0; idx != std::ssize(data); ++idx) {
+            Idx const source_idx = structure.map_to_source[idx];
+            if (source_idx == -1) {
+                data[idx].setZero();
+            } else {
+                data[idx] = source_data[source_idx];
+            }
+        }
+    }
+
+    ExtendedSparseLUData(ExtendedSparseLUData const&) = delete;
+    ExtendedSparseLUData(ExtendedSparseLUData&&) = delete;
+    ExtendedSparseLUData& operator=(ExtendedSparseLUData const&) = delete;
+    ExtendedSparseLUData& operator=(ExtendedSparseLUData&&) = delete;
 };
 
 } // namespace power_grid_model::math_solver

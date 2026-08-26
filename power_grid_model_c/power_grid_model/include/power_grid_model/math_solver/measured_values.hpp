@@ -119,6 +119,11 @@ template <symmetry_tag sym> class MeasuredValues {
     // getter mean angle shift
     RealValue<sym> mean_angle_shift() const { return mean_angle_shift_; }
 
+    // The smallest non-zero variance used to normalize the augmented matrix.
+    // Covariances obtained from its inverse must be multiplied by this value
+    // to restore the input variance scale.
+    constexpr double variance_normalization() const { return variance_normalization_; }
+
     // calculate load_gen and source flow
     // with given bus voltage and bus current injection
     using FlowVector = std::vector<ApplianceSolverOutput<sym>>;
@@ -222,6 +227,7 @@ template <symmetry_tag sym> class MeasuredValues {
     Idx n_voltage_measurements_{};
     Idx n_voltage_angle_measurements_{};
     Idx n_global_angle_current_measurements_{};
+    double variance_normalization_{1.0};
 
     // average angle shift of voltages with angle measurement
     // default is zero is no voltage has angle measurement
@@ -552,8 +558,9 @@ template <symmetry_tag sym> class MeasuredValues {
     void normalize_variance() {
         double min_var = std::numeric_limits<double>::infinity();
         auto const unconstrained_min = [&min_var](double v) {
-            // only non-zero variance is considered
-            if (v != 0.0) {
+            // Only finite positive variances participate. Zero variance denotes an exact constraint,
+            // while infinite variance denotes an unavailable measurement.
+            if (v > 0.0 && std::isfinite(v)) {
                 min_var = std::min(min_var, v);
             }
         };
@@ -581,7 +588,15 @@ template <symmetry_tag sym> class MeasuredValues {
             }
         }
 
+        // An all-exact model has no stochastic scale to normalize. Keep its values unchanged;
+        // downstream covariance code will use the neutral scale factor one.
+        if (!std::isfinite(min_var)) {
+            variance_normalization_ = 1.0;
+            return;
+        }
+
         // scale
+        variance_normalization_ = min_var;
         auto const inv_norm_var = 1.0 / min_var;
         std::ranges::for_each(voltage_main_value_, [inv_norm_var](auto& x) { x.variance *= inv_norm_var; });
         std::ranges::for_each(power_main_value_, [inv_norm_var](auto& x) {
