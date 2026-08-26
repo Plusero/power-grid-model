@@ -28,6 +28,7 @@ extern "C" {
  *   - err_tol: 1e-8
  *   - max_iter: 20
  *   - threading: -1
+ *   - calculate_uncertainty: 0
  *   - short_circuit_voltage_scaling: PGM_short_circuit_voltage_scaling_maximum
  *   - experimental_features: PGM_experimental_features_disabled
  *
@@ -102,6 +103,16 @@ PGM_API void PGM_set_max_iter(PGM_Handle* handle, PGM_Options* opt, PGM_Idx max_
  *   - >0: specify number of threads you want to calculate in parallel.
  */
 PGM_API void PGM_set_threading(PGM_Handle* handle, PGM_Options* opt, PGM_Idx threading) PGM_NOEXCEPT;
+
+/**
+ * @brief Enable analytical uncertainty quantification for iterative-linear or Newton-Raphson state estimation.
+ *
+ * @param handle
+ * @param opt The pointer to the option instance.
+ * @param calculate_uncertainty 1 to calculate uncertainty outputs; 0 to leave them unavailable.
+ */
+PGM_API void PGM_set_calculate_uncertainty(PGM_Handle* handle, PGM_Options* opt,
+                                           PGM_Idx calculate_uncertainty) PGM_NOEXCEPT;
 
 /**
  * @brief Specify the voltage scaling min/max for short circuit calculations

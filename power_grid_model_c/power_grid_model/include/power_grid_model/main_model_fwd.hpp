@@ -30,6 +30,7 @@ struct MainModelOptions {
     double err_tol{1e-8};
     Idx max_iter{20};
     Idx threading{sequential};
+    bool calculate_uncertainty{false};
 
     ShortCircuitVoltageScaling short_circuit_voltage_scaling{ShortCircuitVoltageScaling::maximum};
 };

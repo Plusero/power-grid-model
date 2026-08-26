@@ -31,6 +31,21 @@
           "data_type": "RealValue<sym>",
           "names": ["p", "q"],
           "description": "node injection"
+        },
+        {
+          "data_type": "RealValue<sym>",
+          "names": ["u_pu_sigma", "u_sigma"],
+          "description": "standard deviation of voltage magnitude"
+        },
+        {
+          "data_type": "RealValue<sym>",
+          "names": "u_angle_sigma",
+          "description": "standard deviation of voltage angle"
+        },
+        {
+          "data_type": "RealValue<sym>",
+          "names": ["p_sigma", "q_sigma"],
+          "description": "standard deviation of node injection"
         }
       ]
     },
@@ -53,6 +68,16 @@
           "data_type": "RealValue<sym>",
           "names": ["p_to", "q_to", "i_to", "s_to"],
           "description": "power flow at to-side"
+        },
+        {
+          "data_type": "RealValue<sym>",
+          "names": ["p_from_sigma", "q_from_sigma", "i_from_sigma"],
+          "description": "standard deviation of power and current flow at from-side"
+        },
+        {
+          "data_type": "RealValue<sym>",
+          "names": ["p_to_sigma", "q_to_sigma", "i_to_sigma"],
+          "description": "standard deviation of power and current flow at to-side"
         }
       ]
     },
@@ -95,6 +120,21 @@
           "data_type": "RealValue<sym>",
           "names": ["p_3", "q_3", "i_3", "s_3"],
           "description": "power flow at side 3"
+        },
+        {
+          "data_type": "RealValue<sym>",
+          "names": ["p_1_sigma", "q_1_sigma", "i_1_sigma"],
+          "description": "standard deviation of power and current flow at side 1"
+        },
+        {
+          "data_type": "RealValue<sym>",
+          "names": ["p_2_sigma", "q_2_sigma", "i_2_sigma"],
+          "description": "standard deviation of power and current flow at side 2"
+        },
+        {
+          "data_type": "RealValue<sym>",
+          "names": ["p_3_sigma", "q_3_sigma", "i_3_sigma"],
+          "description": "standard deviation of power and current flow at side 3"
         }
       ]
     },

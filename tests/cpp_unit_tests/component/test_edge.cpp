@@ -213,8 +213,16 @@ TEST_CASE("Test edge") {
 
     SUBCASE("Output Generation") {
         edge_ref.set_status(1, 1);
-        BranchSolverOutput<symmetric_t> const solver_output{
-            .s_f = 1.0 - 1.5i, .s_t = 1.5 - 1.5i, .i_f = 1.0 - 2.0i, .i_t = 2.0 - 1.0i};
+        BranchSolverOutput<symmetric_t> const solver_output{.s_f = 1.0 - 1.5i,
+                                                            .s_t = 1.5 - 1.5i,
+                                                            .i_f = 1.0 - 2.0i,
+                                                            .i_t = 2.0 - 1.0i,
+                                                            .p_f_sigma = 0.1,
+                                                            .q_f_sigma = 0.2,
+                                                            .i_f_sigma = 0.3,
+                                                            .p_t_sigma = 0.4,
+                                                            .q_t_sigma = 0.5,
+                                                            .i_t_sigma = 0.6};
 
         BranchOutput<symmetric_t> const output = edge_ref.get_output<symmetric_t>(solver_output);
 
@@ -223,6 +231,12 @@ TEST_CASE("Test edge") {
         CHECK(output.p_from == doctest::Approx(1.0 * base_power<symmetric_t>));
         CHECK(output.q_from == doctest::Approx(-1.5 * base_power<symmetric_t>));
         CHECK(output.i_from == doctest::Approx(cabs(1.0 - 2.0i) * base_i));
+        CHECK(output.p_from_sigma == doctest::Approx(0.1 * base_power<symmetric_t>));
+        CHECK(output.q_from_sigma == doctest::Approx(0.2 * base_power<symmetric_t>));
+        CHECK(output.i_from_sigma == doctest::Approx(0.3 * base_i));
+        CHECK(output.p_to_sigma == doctest::Approx(0.4 * base_power<symmetric_t>));
+        CHECK(output.q_to_sigma == doctest::Approx(0.5 * base_power<symmetric_t>));
+        CHECK(output.i_to_sigma == doctest::Approx(0.6 * base_i));
         CHECK(output.i_to == doctest::Approx(cabs(2.0 - 1.0i) * base_i));
     }
 

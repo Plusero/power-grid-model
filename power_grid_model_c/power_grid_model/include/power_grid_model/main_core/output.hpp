@@ -18,6 +18,7 @@
 #include "../component/current_sensor.hpp"
 #include "../component/edge.hpp"
 #include "../component/fault.hpp"
+#include "../component/link.hpp"
 #include "../component/load_gen.hpp"
 #include "../component/node.hpp"
 #include "../component/power_sensor.hpp"
@@ -111,8 +112,27 @@ constexpr auto output_result(Component const& node, MainModelState<ComponentCont
         return node.template get_null_output<sym>();
     }
 
-    return node.template get_output<sym>(math_output.solver_output[math_id.group].u[math_id.pos],
-                                         math_output.supernode_output[topo_id.group].bus_injection[topo_id.pos]);
+    auto const& solver_output = math_output.solver_output[math_id.group];
+    auto const& bus_injection = math_output.supernode_output[topo_id.group].bus_injection[topo_id.pos];
+    if (solver_output.bus_uncertainty.size() == solver_output.u.size()) {
+        auto uncertainty = solver_output.bus_uncertainty[math_id.pos];
+        // An internal math bus represents the aggregate of every user node joined by ideal links.
+        // Its injection covariance cannot be assigned to the individual user-node injections.
+        bool is_link_supernode = state.reduced_topology->topo_node_coup.topo_nodes[topo_id.group].is_supernode();
+        if constexpr (decltype(state.components)::template is_storageable_v<Link>) {
+            is_link_supernode = is_link_supernode ||
+                                std::ranges::any_of(state.components.template citer<Link>(), [&node](Link const& link) {
+                                    return link.edge_status() && link.from_node() != link.to_node() &&
+                                           (link.from_node() == node.id() || link.to_node() == node.id());
+                                });
+        }
+        if (is_link_supernode) {
+            uncertainty.p_sigma = RealValue<sym>{nan};
+            uncertainty.q_sigma = RealValue<sym>{nan};
+        }
+        return node.template get_output<sym>(solver_output.u[math_id.pos], bus_injection, uncertainty);
+    }
+    return node.template get_output<sym>(solver_output.u[math_id.pos], bus_injection);
 }
 template <std::derived_from<Node> Component, class ComponentContainer,
           short_circuit_solver_output_type SolverOutputType>
@@ -137,7 +157,16 @@ constexpr auto output_result(Component const& branch, std::vector<SolverOutputTy
     if (math_id.group == disconnected) {
         return branch.template get_null_output<sym>();
     }
-    return branch.template get_output<sym>(solver_output[math_id.group].branch[math_id.pos]);
+    auto result = branch.template get_output<sym>(solver_output[math_id.group].branch[math_id.pos]);
+    if constexpr (std::same_as<Component, Link>) {
+        result.p_from_sigma = RealValue<sym>{nan};
+        result.q_from_sigma = RealValue<sym>{nan};
+        result.i_from_sigma = RealValue<sym>{nan};
+        result.p_to_sigma = RealValue<sym>{nan};
+        result.q_to_sigma = RealValue<sym>{nan};
+        result.i_to_sigma = RealValue<sym>{nan};
+    }
+    return result;
 }
 template <std::derived_from<Edge> Component, short_circuit_solver_output_type SolverOutputType>
 inline auto output_result(Component const& branch, std::vector<SolverOutputType> const& solver_output, Idx2D math_id) {

@@ -31,6 +31,10 @@ class Options {
 
     void set_threading(Idx threading) { handle_.call_with(PGM_set_threading, get(), threading); }
 
+    void set_calculate_uncertainty(Idx calculate_uncertainty) {
+        handle_.call_with(PGM_set_calculate_uncertainty, get(), calculate_uncertainty);
+    }
+
     void set_short_circuit_voltage_scaling(Idx short_circuit_voltage_scaling) {
         handle_.call_with(PGM_set_short_circuit_voltage_scaling, get(), short_circuit_voltage_scaling);
     }

@@ -113,6 +113,17 @@ void check_calculate_valid_options(PGM_Options const& opt) {
                                InvalidArguments::TypeValuePair{.name = "PGM_TapChangingStrategy",
                                                                .value = std::to_string(opt.tap_changing_strategy)}};
     }
+    if (opt.calculate_uncertainty != 0 && opt.calculate_uncertainty != 1) {
+        throw InvalidArguments{"PGM_calculate",
+                               InvalidArguments::TypeValuePair{.name = "calculate_uncertainty",
+                                                               .value = std::to_string(opt.calculate_uncertainty)}};
+    }
+    if (opt.calculate_uncertainty == 1 &&
+        (opt.calculation_type != PGM_state_estimation ||
+         (opt.calculation_method != PGM_default_method && opt.calculation_method != PGM_iterative_linear &&
+          opt.calculation_method != PGM_newton_raphson))) {
+        throw InvalidArguments{"PGM_calculate", "calculate_uncertainty is supported only for state estimation"};
+    }
 }
 
 constexpr auto get_calculation_type(PGM_Options const& opt) { return safe_enum<CalculationType>(opt.calculation_type); }
@@ -179,6 +190,7 @@ constexpr auto extract_calculation_options(PGM_Options const& opt) {
                               .err_tol = opt.err_tol,
                               .max_iter = opt.max_iter,
                               .threading = opt.threading,
+                              .calculate_uncertainty = opt.calculate_uncertainty == 1,
                               .short_circuit_voltage_scaling = get_short_circuit_voltage_scaling(opt)};
 }
 

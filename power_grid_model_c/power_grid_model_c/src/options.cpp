@@ -44,6 +44,10 @@ void PGM_set_max_iter(PGM_Handle* handle, PGM_Options* opt, PGM_Idx max_iter) no
 void PGM_set_threading(PGM_Handle* handle, PGM_Options* opt, PGM_Idx threading) noexcept {
     call_with_catch(handle, [opt, threading] { safe_ptr_get(opt).threading = threading; });
 }
+void PGM_set_calculate_uncertainty(PGM_Handle* handle, PGM_Options* opt, PGM_Idx calculate_uncertainty) noexcept {
+    call_with_catch(handle,
+                    [opt, calculate_uncertainty] { safe_ptr_get(opt).calculate_uncertainty = calculate_uncertainty; });
+}
 void PGM_set_short_circuit_voltage_scaling(PGM_Handle* handle, PGM_Options* opt,
                                            PGM_Idx short_circuit_voltage_scaling) noexcept {
     call_with_catch(handle, [opt, short_circuit_voltage_scaling] {

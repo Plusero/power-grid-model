@@ -36,7 +36,7 @@ template <symmetry_tag sym_type>
 struct get_attributes_list<NodeOutput<sym_type>> {
     using sym = sym_type;
 
-    static constexpr std::array<MetaAttribute, 7> value{
+    static constexpr std::array<MetaAttribute, 12> value{
             // all attributes including base class
             
             meta_data_gen::get_meta_attribute<&NodeOutput<sym>::id>(offsetof(NodeOutput<sym>, id), "id"),
@@ -46,6 +46,11 @@ struct get_attributes_list<NodeOutput<sym_type>> {
             meta_data_gen::get_meta_attribute<&NodeOutput<sym>::u_angle>(offsetof(NodeOutput<sym>, u_angle), "u_angle"),
             meta_data_gen::get_meta_attribute<&NodeOutput<sym>::p>(offsetof(NodeOutput<sym>, p), "p"),
             meta_data_gen::get_meta_attribute<&NodeOutput<sym>::q>(offsetof(NodeOutput<sym>, q), "q"),
+            meta_data_gen::get_meta_attribute<&NodeOutput<sym>::u_pu_sigma>(offsetof(NodeOutput<sym>, u_pu_sigma), "u_pu_sigma"),
+            meta_data_gen::get_meta_attribute<&NodeOutput<sym>::u_sigma>(offsetof(NodeOutput<sym>, u_sigma), "u_sigma"),
+            meta_data_gen::get_meta_attribute<&NodeOutput<sym>::u_angle_sigma>(offsetof(NodeOutput<sym>, u_angle_sigma), "u_angle_sigma"),
+            meta_data_gen::get_meta_attribute<&NodeOutput<sym>::p_sigma>(offsetof(NodeOutput<sym>, p_sigma), "p_sigma"),
+            meta_data_gen::get_meta_attribute<&NodeOutput<sym>::q_sigma>(offsetof(NodeOutput<sym>, q_sigma), "q_sigma"),
     };
 };
 
@@ -53,7 +58,7 @@ template <symmetry_tag sym_type>
 struct get_attributes_list<BranchOutput<sym_type>> {
     using sym = sym_type;
 
-    static constexpr std::array<MetaAttribute, 11> value{
+    static constexpr std::array<MetaAttribute, 17> value{
             // all attributes including base class
             
             meta_data_gen::get_meta_attribute<&BranchOutput<sym>::id>(offsetof(BranchOutput<sym>, id), "id"),
@@ -67,6 +72,12 @@ struct get_attributes_list<BranchOutput<sym_type>> {
             meta_data_gen::get_meta_attribute<&BranchOutput<sym>::q_to>(offsetof(BranchOutput<sym>, q_to), "q_to"),
             meta_data_gen::get_meta_attribute<&BranchOutput<sym>::i_to>(offsetof(BranchOutput<sym>, i_to), "i_to"),
             meta_data_gen::get_meta_attribute<&BranchOutput<sym>::s_to>(offsetof(BranchOutput<sym>, s_to), "s_to"),
+            meta_data_gen::get_meta_attribute<&BranchOutput<sym>::p_from_sigma>(offsetof(BranchOutput<sym>, p_from_sigma), "p_from_sigma"),
+            meta_data_gen::get_meta_attribute<&BranchOutput<sym>::q_from_sigma>(offsetof(BranchOutput<sym>, q_from_sigma), "q_from_sigma"),
+            meta_data_gen::get_meta_attribute<&BranchOutput<sym>::i_from_sigma>(offsetof(BranchOutput<sym>, i_from_sigma), "i_from_sigma"),
+            meta_data_gen::get_meta_attribute<&BranchOutput<sym>::p_to_sigma>(offsetof(BranchOutput<sym>, p_to_sigma), "p_to_sigma"),
+            meta_data_gen::get_meta_attribute<&BranchOutput<sym>::q_to_sigma>(offsetof(BranchOutput<sym>, q_to_sigma), "q_to_sigma"),
+            meta_data_gen::get_meta_attribute<&BranchOutput<sym>::i_to_sigma>(offsetof(BranchOutput<sym>, i_to_sigma), "i_to_sigma"),
     };
 };
 
@@ -74,7 +85,7 @@ template <symmetry_tag sym_type>
 struct get_attributes_list<Branch3Output<sym_type>> {
     using sym = sym_type;
 
-    static constexpr std::array<MetaAttribute, 18> value{
+    static constexpr std::array<MetaAttribute, 27> value{
             // all attributes including base class
             
             meta_data_gen::get_meta_attribute<&Branch3Output<sym>::id>(offsetof(Branch3Output<sym>, id), "id"),
@@ -95,6 +106,15 @@ struct get_attributes_list<Branch3Output<sym_type>> {
             meta_data_gen::get_meta_attribute<&Branch3Output<sym>::q_3>(offsetof(Branch3Output<sym>, q_3), "q_3"),
             meta_data_gen::get_meta_attribute<&Branch3Output<sym>::i_3>(offsetof(Branch3Output<sym>, i_3), "i_3"),
             meta_data_gen::get_meta_attribute<&Branch3Output<sym>::s_3>(offsetof(Branch3Output<sym>, s_3), "s_3"),
+            meta_data_gen::get_meta_attribute<&Branch3Output<sym>::p_1_sigma>(offsetof(Branch3Output<sym>, p_1_sigma), "p_1_sigma"),
+            meta_data_gen::get_meta_attribute<&Branch3Output<sym>::q_1_sigma>(offsetof(Branch3Output<sym>, q_1_sigma), "q_1_sigma"),
+            meta_data_gen::get_meta_attribute<&Branch3Output<sym>::i_1_sigma>(offsetof(Branch3Output<sym>, i_1_sigma), "i_1_sigma"),
+            meta_data_gen::get_meta_attribute<&Branch3Output<sym>::p_2_sigma>(offsetof(Branch3Output<sym>, p_2_sigma), "p_2_sigma"),
+            meta_data_gen::get_meta_attribute<&Branch3Output<sym>::q_2_sigma>(offsetof(Branch3Output<sym>, q_2_sigma), "q_2_sigma"),
+            meta_data_gen::get_meta_attribute<&Branch3Output<sym>::i_2_sigma>(offsetof(Branch3Output<sym>, i_2_sigma), "i_2_sigma"),
+            meta_data_gen::get_meta_attribute<&Branch3Output<sym>::p_3_sigma>(offsetof(Branch3Output<sym>, p_3_sigma), "p_3_sigma"),
+            meta_data_gen::get_meta_attribute<&Branch3Output<sym>::q_3_sigma>(offsetof(Branch3Output<sym>, q_3_sigma), "q_3_sigma"),
+            meta_data_gen::get_meta_attribute<&Branch3Output<sym>::i_3_sigma>(offsetof(Branch3Output<sym>, i_3_sigma), "i_3_sigma"),
     };
 };
 
