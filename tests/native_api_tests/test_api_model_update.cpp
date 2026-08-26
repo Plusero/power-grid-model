@@ -17,9 +17,12 @@
 
 #include <doctest/doctest.h>
 
+#include <array>
+#include <cmath>
 #include <cstdint>
 #include <numbers>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -419,7 +422,15 @@ TEST_CASE("API model - all updates") {
 
                 for (Idx i = 0; i < total_elements; ++i) {
                     CAPTURE(i);
-                    CHECK(sym_output_from_batch[i] == sym_output_from_updated_single[i]);
+                    if constexpr (std::is_floating_point_v<T>) {
+                        bool const both_nan =
+                            std::isnan(sym_output_from_batch[i]) && std::isnan(sym_output_from_updated_single[i]);
+                        bool const values_match =
+                            both_nan || sym_output_from_batch[i] == sym_output_from_updated_single[i];
+                        CHECK(values_match);
+                    } else {
+                        CHECK(sym_output_from_batch[i] == sym_output_from_updated_single[i]);
+                    }
                 }
             });
         }
@@ -708,19 +719,34 @@ TEST_CASE("API model - incomplete input") {
                         auto const attr_name = MetaData::attribute_name(attr_meta);
                         CAPTURE(attr_name);
 
-                        pgm_type_func_selector(attr_meta,
-                                               [&test_node_output, &ref_node_output, attr_meta, node_idx]<typename T> {
-                                                   T test_value{nan_value<T>()};
-                                                   T ref_value{nan_value<T>()};
-                                                   test_node_output.get_value(attr_meta, &test_value, node_idx, 0);
-                                                   ref_node_output.get_value(attr_meta, &ref_value, node_idx, 0);
+                        pgm_type_func_selector(
+                            attr_meta, [&test_node_output, &ref_node_output, attr_meta, node_idx]<typename T> {
+                                T test_value{nan_value<T>()};
+                                T ref_value{nan_value<T>()};
+                                test_node_output.get_value(attr_meta, &test_value, node_idx, 0);
+                                ref_node_output.get_value(attr_meta, &ref_value, node_idx, 0);
 
-                                                   if constexpr (std::is_floating_point_v<T>) {
-                                                       CHECK(test_value == doctest::Approx(ref_value));
-                                                   } else {
-                                                       CHECK(test_value == ref_value);
-                                                   }
-                                               });
+                                if constexpr (std::is_floating_point_v<T>) {
+                                    if (std::isnan(test_value) || std::isnan(ref_value)) {
+                                        CHECK(std::isnan(test_value));
+                                        CHECK(std::isnan(ref_value));
+                                    } else {
+                                        CHECK(test_value == doctest::Approx(ref_value));
+                                    }
+                                } else if constexpr (std::same_as<T, std::array<double, 3>>) {
+                                    for (Idx phase = 0; phase != 3; ++phase) {
+                                        CAPTURE(phase);
+                                        if (std::isnan(test_value[phase]) || std::isnan(ref_value[phase])) {
+                                            CHECK(std::isnan(test_value[phase]));
+                                            CHECK(std::isnan(ref_value[phase]));
+                                        } else {
+                                            CHECK(test_value[phase] == doctest::Approx(ref_value[phase]));
+                                        }
+                                    }
+                                } else {
+                                    CHECK(test_value == ref_value);
+                                }
+                            });
                     }
                 }
             }

@@ -121,16 +121,25 @@ class Branch3 : public Base {
         output.q_1 = base_power<sym> * imag(branch_solver_output1.s_f);
         output.i_1 = base_i_1() * cabs(branch_solver_output1.i_f);
         output.s_1 = base_power<sym> * cabs(branch_solver_output1.s_f);
+        output.p_1_sigma = base_power<sym> * branch_solver_output1.p_f_sigma;
+        output.q_1_sigma = base_power<sym> * branch_solver_output1.q_f_sigma;
+        output.i_1_sigma = base_i_1() * branch_solver_output1.i_f_sigma;
 
         output.p_2 = base_power<sym> * real(branch_solver_output2.s_f);
         output.q_2 = base_power<sym> * imag(branch_solver_output2.s_f);
         output.i_2 = base_i_2() * cabs(branch_solver_output2.i_f);
         output.s_2 = base_power<sym> * cabs(branch_solver_output2.s_f);
+        output.p_2_sigma = base_power<sym> * branch_solver_output2.p_f_sigma;
+        output.q_2_sigma = base_power<sym> * branch_solver_output2.q_f_sigma;
+        output.i_2_sigma = base_i_2() * branch_solver_output2.i_f_sigma;
 
         output.p_3 = base_power<sym> * real(branch_solver_output3.s_f);
         output.q_3 = base_power<sym> * imag(branch_solver_output3.s_f);
         output.i_3 = base_i_3() * cabs(branch_solver_output3.i_f);
         output.s_3 = base_power<sym> * cabs(branch_solver_output3.s_f);
+        output.p_3_sigma = base_power<sym> * branch_solver_output3.p_f_sigma;
+        output.q_3_sigma = base_power<sym> * branch_solver_output3.q_f_sigma;
+        output.i_3_sigma = base_i_3() * branch_solver_output3.i_f_sigma;
 
         output.loading = loading(sum_val(output.s_1), sum_val(output.s_2), sum_val(output.s_3));
         output.loading_1 = loading_1(sum_val(output.s_1));
@@ -184,6 +193,15 @@ class Branch3 : public Base {
             .q_3 = {},
             .i_3 = {},
             .s_3 = {},
+            .p_1_sigma = RealValue<sym>{nan},
+            .q_1_sigma = RealValue<sym>{nan},
+            .i_1_sigma = RealValue<sym>{nan},
+            .p_2_sigma = RealValue<sym>{nan},
+            .q_2_sigma = RealValue<sym>{nan},
+            .i_2_sigma = RealValue<sym>{nan},
+            .p_3_sigma = RealValue<sym>{nan},
+            .q_3_sigma = RealValue<sym>{nan},
+            .i_3_sigma = RealValue<sym>{nan},
         };
         static_cast<BaseOutput&>(output) = base_output(false);
         return output;

@@ -19,6 +19,7 @@
 #include "../component/current_sensor.hpp"
 #include "../component/edge.hpp"
 #include "../component/fault.hpp"
+#include "../component/link.hpp"
 #include "../component/load_gen.hpp"
 #include "../component/node.hpp"
 #include "../component/power_sensor.hpp"
@@ -40,6 +41,16 @@ namespace power_grid_model::main_core {
 namespace detail {
 template <typename T, typename U>
 concept assignable_to = std::assignable_from<U, T>;
+
+template <symmetry_tag sym> constexpr void set_link_uncertainty_unavailable(BranchOutput<sym>& output) {
+    // Ideal-link terminal-flow uncertainty is not available from the reduced mathematical network.
+    output.p_from_sigma = RealValue<sym>{nan};
+    output.q_from_sigma = RealValue<sym>{nan};
+    output.i_from_sigma = RealValue<sym>{nan};
+    output.p_to_sigma = RealValue<sym>{nan};
+    output.q_to_sigma = RealValue<sym>{nan};
+    output.i_to_sigma = RealValue<sym>{nan};
+}
 
 template <typename MeasuredComponent, class ComponentContainer, typename... StatusArgs>
 constexpr bool measured_component_active(MainModelState<ComponentContainer> const& state, Idx const obj_seq,
@@ -122,8 +133,29 @@ constexpr auto output_result(Component const& node, MainModelState<ComponentCont
         return node.template get_null_output<sym>();
     }
 
-    return node.template get_output<sym>(get_voltage_output(math_output, math_id),
-                                         get_bus_injection_output_from_topo_id(math_output, topo_id));
+    auto const& solver_output = math_output.solver_output[math_id.group];
+    auto const voltage = get_voltage_output(math_output, math_id);
+    auto const bus_injection = get_bus_injection_output_from_topo_id(math_output, topo_id);
+    if (solver_output.bus_uncertainty.size() == solver_output.u.size()) {
+        auto uncertainty = solver_output.bus_uncertainty[math_id.pos];
+        // An internal math bus represents the aggregate of every user node joined by ideal links.
+        // Its injection covariance cannot be assigned to the individual user-node injections.
+        bool is_link_supernode = state.reduced_topology->topo_node_coup.topo_nodes[topo_id.group].is_supernode();
+        if constexpr (common::component_container_c<ComponentContainer, Link>) {
+            is_link_supernode =
+                is_link_supernode ||
+                std::ranges::any_of(get_component_citer<Link>(state.components), [&node](Link const& link) {
+                    return link.edge_status() && link.from_node() != link.to_node() &&
+                           (link.from_node() == node.id() || link.to_node() == node.id());
+                });
+        }
+        if (is_link_supernode) {
+            uncertainty.p_sigma = RealValue<sym>{nan};
+            uncertainty.q_sigma = RealValue<sym>{nan};
+        }
+        return node.template get_output<sym>(voltage, bus_injection, uncertainty);
+    }
+    return node.template get_output<sym>(voltage, bus_injection);
 }
 template <std::derived_from<Node> Component, class ComponentContainer,
           short_circuit_solver_output_type SolverOutputType>
@@ -155,7 +187,9 @@ constexpr auto output_result(Component const& link, MainModelState<ComponentCont
     if (!link.edge_status()) {
         return link.template get_energized_zero_output<sym>();
     }
-    return link.template get_output<sym>(math_output.supernode_output[topo_id.group].link[topo_id.pos]);
+    auto result = link.template get_output<sym>(math_output.supernode_output[topo_id.group].link[topo_id.pos]);
+    detail::set_link_uncertainty_unavailable(result);
+    return result;
 }
 template <std::same_as<Link> Component, class ComponentContainer, short_circuit_solver_output_type SolverOutputType>
     requires model_component_state_c<MainModelState, ComponentContainer, Component>
@@ -543,7 +577,11 @@ constexpr void output_result(MainModelState<ComponentContainer> const& state,
     } else {
         detail::produce_output<Component, Idx2D>(state, output,
                                                  [&math_output](Component const& link, Idx2D const& math_id) {
-                                                     return output_result<Edge>(link, math_output, math_id);
+                                                     auto result = output_result<Edge>(link, math_output, math_id);
+                                                     if constexpr (steady_state_solver_output_type<SolverOutputType>) {
+                                                         detail::set_link_uncertainty_unavailable(result);
+                                                     }
+                                                     return result;
                                                  });
     }
 }

@@ -34,6 +34,7 @@
 
 #include <doctest/doctest.h>
 
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <utility>
@@ -259,7 +260,16 @@ TEST_CASE("Test main core output") {
                 .optimizer_output = {},
                 .supernode_output = {
                     {.bus_injection = {},
-                     .link = {{.s_f = {1.0, 2.0}, .s_t = {-1.0, -1.5}, .i_f = {3.0, 4.0}, .i_t = {-3.0, -4.0}},
+                     .link = {{.s_f = {1.0, 2.0},
+                               .s_t = {-1.0, -1.5},
+                               .i_f = {3.0, 4.0},
+                               .i_t = {-3.0, -4.0},
+                               .p_f_sigma = 1.0,
+                               .q_f_sigma = 2.0,
+                               .i_f_sigma = 3.0,
+                               .p_t_sigma = 4.0,
+                               .q_t_sigma = 5.0,
+                               .i_t_sigma = 6.0},
                               {.s_f = {3.0, 4.0}, .s_t = {-3.0, -4.0}, .i_f = {5.0, 6.0}, .i_t = {-5.0, -5.5}}}}}};
             std::vector<SymBranchOutput> output(3);
 
@@ -273,10 +283,35 @@ TEST_CASE("Test main core output") {
             CHECK(output[0].q_to == doctest::Approx(-1.5 * base_power_3p));
             CHECK(output[0].i_from == doctest::Approx(5.0 * base_power_3p / 10e3 / sqrt3));
             CHECK(output[0].i_to == doctest::Approx(5.0 * base_power_3p / 20e3 / sqrt3));
+            CHECK(std::isnan(output[0].p_from_sigma));
+            CHECK(std::isnan(output[0].q_from_sigma));
+            CHECK(std::isnan(output[0].i_from_sigma));
+            CHECK(std::isnan(output[0].p_to_sigma));
+            CHECK(std::isnan(output[0].q_to_sigma));
+            CHECK(std::isnan(output[0].i_to_sigma));
             CHECK(output[1].id == 1);
             CHECK(output[1].energized == status_on); // connected rest of grid but one of the ends is off
             CHECK(output[2].id == 2);
             CHECK(output[2].energized == status_off); // completely disconnected from rest of grid
+
+            SUBCASE("Legacy links-as-branches output") {
+                state.reduced_topology = std::make_shared<ReducedTopology const>();
+                auto legacy_coupling = std::make_shared<TopologicalComponentToMathCoupling>();
+                legacy_coupling->branch = {
+                    {.group = 0, .pos = 0}, {.group = 0, .pos = 1}, {.group = disconnected, .pos = disconnected}};
+                state.topo_comp_coup = std::move(legacy_coupling);
+                auto legacy_math_output = math_output;
+                legacy_math_output.solver_output.emplace_back();
+                legacy_math_output.solver_output[0].branch = math_output.supernode_output[0].link;
+
+                output_result<Link>(state, legacy_math_output, output);
+
+                CHECK(output[0].p_from == doctest::Approx(base_power_3p));
+                for (double const sigma : {output[0].p_from_sigma, output[0].q_from_sigma, output[0].i_from_sigma,
+                                           output[0].p_to_sigma, output[0].q_to_sigma, output[0].i_to_sigma}) {
+                    CHECK(std::isnan(sigma));
+                }
+            }
         }
 
         SUBCASE("Short circuit output") {
