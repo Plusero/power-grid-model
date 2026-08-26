@@ -122,7 +122,7 @@ constexpr auto output_result(Component const& node, MainModelState<ComponentCont
         if constexpr (decltype(state.components)::template is_storageable_v<Link>) {
             is_link_supernode = is_link_supernode ||
                                 std::ranges::any_of(state.components.template citer<Link>(), [&node](Link const& link) {
-                                    return link.branch_status() && link.from_node() != link.to_node() &&
+                                    return link.edge_status() && link.from_node() != link.to_node() &&
                                            (link.from_node() == node.id() || link.to_node() == node.id());
                                 });
         }

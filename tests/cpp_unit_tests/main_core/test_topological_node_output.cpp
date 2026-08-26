@@ -184,6 +184,20 @@ struct LinkSolverMock {
 
 TEST_CASE("Test topological node output") {
 
+    SUBCASE("get_component_output returns the stored load output by reference") {
+        MathOutput<std::vector<SolverOutput<symmetric_t>>> math_output{};
+        SolverOutput<symmetric_t> solver_output{};
+        solver_output.load_gen = {
+            {.s = {1.0, 2.0}, .i = {3.0, 4.0}},
+            {.s = {5.0, 6.0}, .i = {7.0, 8.0}},
+        };
+        math_output.solver_output.emplace_back(std::move(solver_output));
+
+        auto const& component_output = get_component_output<SymLoad>(math_output, Idx2D{.group = 0, .pos = 1});
+        static_assert(std::same_as<decltype(component_output), ApplianceSolverOutput<symmetric_t> const&>);
+        CHECK(std::addressof(component_output) == std::addressof(math_output.solver_output[0].load_gen[1]));
+    }
+
     SUBCASE("get_injection") {
         SUBCASE("ApplianceSolverOutput") {
             ApplianceSolverOutput<symmetric_t> appliance_output;

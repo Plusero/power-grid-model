@@ -53,6 +53,7 @@ example = [
     "pandapower>=3.5.4",
     "SciencePlots",
     "scipy",
+    "tqdm",
 ]
 
 dev = [

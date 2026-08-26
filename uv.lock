@@ -1824,12 +1824,43 @@ wheels = [
 ]
 
 [[package]]
+name = "orderly-set"
+version = "5.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/4a/88/39c83c35d5e97cc203e9e77a4f93bf87ec89cf6a22ac4818fdcc65d66584/orderly_set-5.5.0.tar.gz", hash = "sha256:e87185c8e4d8afa64e7f8160ee2c542a475b738bc891dc3f58102e654125e6ce", size = 27414, upload-time = "2025-07-10T20:10:55.885Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/12/27/fb8d7338b4d551900fa3e580acbe7a0cf655d940e164cb5c00ec31961094/orderly_set-5.5.0-py3-none-any.whl", hash = "sha256:46f0b801948e98f427b412fcabb831677194c05c3b699b80de260374baa0b1e7", size = 13068, upload-time = "2025-07-10T20:10:54.377Z" },
+]
+
+[[package]]
 name = "packaging"
 version = "26.3"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7d/fa/3944b40b07da9ce895c0e6303a5ab7d53da063554f534556b134a54d6093/packaging-26.3.tar.gz", hash = "sha256:94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79", size = 313412, upload-time = "2026-08-04T18:15:28.737Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl", hash = "sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c", size = 129956, upload-time = "2026-08-04T18:15:27.159Z" },
+]
+
+[[package]]
+name = "pandapower"
+version = "3.5.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama" },
+    { name = "deepdiff" },
+    { name = "geojson" },
+    { name = "networkx" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "pandas" },
+    { name = "pandera" },
+    { name = "scipy" },
+    { name = "tqdm" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/dc/ed/ca0d92fc6576fdf53710b99906c6156a26fae5c8d320470aa26be354ddaf/pandapower-3.5.4.tar.gz", hash = "sha256:b5248608038ed13245367d3c4c2cf1cc3a924ad7b93e51946f379335dfd0f314", size = 5319688, upload-time = "2026-07-08T18:05:51.983Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/16/ab/94f6dc386e4f7d0340a2df93f7c4fa520ce29beea2b9256867d574c6c138/pandapower-3.5.4-py3-none-any.whl", hash = "sha256:d4996221743d990bdb4e98466c5274997d9e1cf39db7a24fbea5849fe17f9536", size = 5635342, upload-time = "2026-07-08T18:05:49.636Z" },
 ]
 
 [[package]]
@@ -2042,6 +2073,7 @@ dev = [
     { name = "ruff" },
     { name = "scienceplots" },
     { name = "scipy" },
+    { name = "tqdm" },
 ]
 doc = [
     { name = "breathe" },
@@ -2062,6 +2094,7 @@ example = [
     { name = "pandapower" },
     { name = "scienceplots" },
     { name = "scipy" },
+    { name = "tqdm" },
 ]
 lint = [
     { name = "clang-format" },
@@ -2102,6 +2135,7 @@ dev = [
     { name = "ruff" },
     { name = "scienceplots" },
     { name = "scipy" },
+    { name = "tqdm" },
 ]
 doc = [
     { name = "breathe" },
@@ -2122,7 +2156,8 @@ example = [
     { name = "pandapower", specifier = ">=3.5.4" },
     { name = "scienceplots" },
     { name = "scipy" },
-]
+    { name = "tqdm" },
+                        ]
 lint = [
     { name = "clang-format", specifier = ">=18,<23" },
     { name = "gersemi" },
