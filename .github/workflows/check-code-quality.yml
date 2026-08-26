@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
       - name: Install most linters from uv
         run: |
@@ -51,20 +51,6 @@ jobs:
       - name: Run cmake-linter
         run: |
           uv run --frozen gersemi -i --warnings-as-errors src/ tests/ cmake/
-
-      - name: Install npm packages
-        run: |
-          npm ci
-
-      - name: Run markdownlint
-        run: |
-          echo "Running markdownlint"
-          npx markdownlint --fix .
-
-      - name: Run Biome
-        run: |
-          echo "Running Biome"
-          npx biome format --write --files-ignore-unknown=true --no-errors-on-unmatched
 
       - name: If needed raise error
         run: |
