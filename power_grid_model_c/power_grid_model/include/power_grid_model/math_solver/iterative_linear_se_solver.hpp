@@ -22,6 +22,8 @@
 #include "../common/three_phase_tensor.hpp"
 #include "../common/timer.hpp"
 
+#include <Eigen/Dense>
+
 #include <algorithm>
 #include <array>
 #include <complex>
@@ -84,6 +86,14 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
   private:
     // block size 2 for symmetric, 6 for asym
     static constexpr Idx bsr_block_size_ = is_symmetric_v<sym> ? 2 : 6;
+    static constexpr int n_phase_ = is_symmetric_v<sym> ? 1 : 3;
+
+    using PhaseVector = Eigen::Matrix<DoubleComplex, n_phase_, 1>;
+    using PhaseMatrix = Eigen::Matrix<DoubleComplex, n_phase_, n_phase_>;
+    using TerminalStateMatrix = Eigen::Matrix<DoubleComplex, 2 * n_phase_, 2 * n_phase_>;
+    using TerminalJacobian = Eigen::Matrix<DoubleComplex, n_phase_, 2 * n_phase_>;
+    using SparseSolverType = SparseLUSolver<ILSEGainBlock<sym>, ILSERhs<sym>, ILSEUnknown<sym>>;
+    using UncertaintyMatrix = ExtendedSparseLUData<ILSEGainBlock<sym>, ILSERhs<sym>, ILSEUnknown<sym>>;
 
   public:
     IterativeLinearSESolver(YBus<sym> const& y_bus, MathModelTopology const& topo)
@@ -96,6 +106,11 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
 
     SolverOutput<sym> run_state_estimation(YBus<sym> const& y_bus, StateEstimationInput<sym> const& input,
                                            double err_tol, Idx max_iter, Logger& log) {
+        return run_state_estimation(y_bus, input, err_tol, max_iter, false, log);
+    }
+
+    SolverOutput<sym> run_state_estimation(YBus<sym> const& y_bus, StateEstimationInput<sym> const& input,
+                                           double err_tol, Idx max_iter, bool calculate_uncertainty, Logger& log) {
         // prepare
         Timer main_timer;
         Timer sub_timer;
@@ -145,6 +160,10 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
         sub_timer = Timer{log, LogEvent::calculate_math_result};
         detail::calculate_se_result<sym>(y_bus, measured_values, output);
 
+        if (calculate_uncertainty) {
+            calculate_state_estimation_uncertainty(y_bus, measured_values, output);
+        }
+
         // Manually stop timers to avoid "Max number of iterations" to be included in the timing.
         sub_timer.stop();
         main_timer.stop();
@@ -174,8 +193,8 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
     // unknown and rhs
     std::vector<ILSERhs<sym>> x_rhs_;
     // solver
-    SparseLUSolver<ILSEGainBlock<sym>, ILSERhs<sym>, ILSEUnknown<sym>> sparse_solver_;
-    SparseLUSolver<ILSEGainBlock<sym>, ILSERhs<sym>, ILSEUnknown<sym>>::BlockPermArray perm_;
+    SparseSolverType sparse_solver_;
+    SparseSolverType::BlockPermArray perm_;
 
     static auto diagonal_inverse(RealValue<sym> const& value) {
         return ComplexDiagonalTensor<sym>{static_cast<ComplexValue<sym>>(RealValue<sym>{1.0} / value)};
@@ -397,6 +416,292 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
     auto linearize_measurements(ComplexValueVector<sym> const& current_u,
                                 MeasuredValues<sym> const& measured_values) const {
         return measured_values.combine_voltage_iteration_with_measurements(current_u);
+    }
+
+    static PhaseVector as_phase_vector(ComplexValue<sym> const& value) {
+        PhaseVector result;
+        if constexpr (is_symmetric_v<sym>) {
+            result(0) = value;
+        } else {
+            result = value.matrix();
+        }
+        return result;
+    }
+
+    static PhaseMatrix as_phase_matrix(ComplexTensor<sym> const& value) {
+        PhaseMatrix result;
+        if constexpr (is_symmetric_v<sym>) {
+            result(0, 0) = value;
+        } else {
+            result = value.matrix();
+        }
+        return result;
+    }
+
+    static void set_phase_value(RealValue<sym>& value, Idx phase, double phase_value) {
+        if constexpr (is_symmetric_v<sym>) {
+            (void)phase;
+            value = phase_value;
+        } else {
+            value(phase) = phase_value;
+        }
+    }
+
+    static void set_eta_phase(ILSERhs<sym>& value, Idx phase, DoubleComplex phase_value) {
+        if constexpr (is_symmetric_v<sym>) {
+            (void)phase;
+            value.eta() = phase_value;
+        } else {
+            value.eta()(phase) = phase_value;
+        }
+    }
+
+    static DoubleComplex get_u_phase(ILSERhs<sym>& value, Idx phase) {
+        if constexpr (is_symmetric_v<sym>) {
+            (void)phase;
+            return value.u();
+        } else {
+            return value.u()(phase);
+        }
+    }
+
+    static double variance_to_sigma(double variance, double scale) {
+        double const tolerance = 1000.0 * std::numeric_limits<double>::epsilon() * std::max(1.0, scale);
+        if (!std::isfinite(variance) || variance < -tolerance) {
+            return nan;
+        }
+        return std::sqrt(std::max(0.0, variance));
+    }
+
+    static PhaseMatrix selected_voltage_covariance(UncertaintyMatrix const& uncertainty_matrix, Idx row, Idx col) {
+        if (row == disconnected || col == disconnected) {
+            return PhaseMatrix::Zero();
+        }
+
+        Idx const idx = uncertainty_matrix.structure.find_entry(row, col);
+        return uncertainty_matrix.data[idx].matrix().template topLeftCorner<n_phase_, n_phase_>();
+    }
+
+    void calculate_bus_injection_uncertainty(YBus<sym> const& y_bus, UncertaintyMatrix const& uncertainty_matrix,
+                                             double variance_normalization, SolverOutput<sym>& output) {
+        for (Idx bus = 0; bus != n_bus_; ++bus) {
+            PhaseVector current = PhaseVector::Zero();
+            for (Idx idx = y_bus.row_indptr()[bus]; idx != y_bus.row_indptr()[bus + 1]; ++idx) {
+                current +=
+                    as_phase_matrix(y_bus.admittance()[idx]) * as_phase_vector(output.u[y_bus.col_indices()[idx]]);
+            }
+            PhaseVector const voltage = as_phase_vector(output.u[bus]);
+
+            for (Idx phase = 0; phase != n_phase_; ++phase) {
+                PhaseVector h = PhaseVector::Zero();
+                h(phase) = current(phase);
+                std::vector<std::pair<Idx, PhaseVector>> k_blocks;
+                k_blocks.reserve(y_bus.row_indptr()[bus + 1] - y_bus.row_indptr()[bus]);
+                for (Idx idx = y_bus.row_indptr()[bus]; idx != y_bus.row_indptr()[bus + 1]; ++idx) {
+                    Idx const col = y_bus.col_indices()[idx];
+                    PhaseMatrix const admittance = as_phase_matrix(y_bus.admittance()[idx]);
+                    PhaseVector k = PhaseVector::Zero();
+                    for (Idx col_phase = 0; col_phase != n_phase_; ++col_phase) {
+                        k(col_phase) = voltage(phase) * std::conj(admittance(phase, col_phase));
+                    }
+                    k_blocks.emplace_back(col, std::move(k));
+                }
+
+                DoubleComplex const h_v_hh = h.dot(selected_voltage_covariance(uncertainty_matrix, bus, bus) * h);
+                DoubleComplex h_v_kt{};
+                DoubleComplex k_conj_v_kt{};
+                for (auto const& [right_bus, right_k] : k_blocks) {
+                    h_v_kt += h.dot(selected_voltage_covariance(uncertainty_matrix, bus, right_bus) * right_k);
+                    for (auto const& [left_bus, left_k] : k_blocks) {
+                        k_conj_v_kt +=
+                            left_k.dot(selected_voltage_covariance(uncertainty_matrix, left_bus, right_bus) * right_k);
+                    }
+                }
+
+                double const covariance = std::real(h_v_hh + std::conj(k_conj_v_kt));
+                double const pseudo_covariance = 2.0 * std::real(h_v_kt);
+                double const p_variance = 0.5 * variance_normalization * (covariance + pseudo_covariance);
+                double const q_variance = 0.5 * variance_normalization * (covariance - pseudo_covariance);
+                double const scale =
+                    0.5 * variance_normalization * (std::abs(covariance) + std::abs(pseudo_covariance));
+                set_phase_value(output.bus_uncertainty[bus].p_sigma, phase, variance_to_sigma(p_variance, scale));
+                set_phase_value(output.bus_uncertainty[bus].q_sigma, phase, variance_to_sigma(q_variance, scale));
+            }
+        }
+    }
+
+    std::vector<PhaseVector> calculate_reference_voltage_covariance(bool has_angle_measurement,
+                                                                    UncertaintyMatrix& uncertainty_matrix) {
+        if (has_angle_measurement) {
+            return {};
+        }
+
+        std::vector<ILSERhs<sym>> rhs(n_bus_);
+        std::vector<ILSERhs<sym>> solution(n_bus_);
+        std::ranges::for_each(rhs, [](auto& value) { value.clear(); });
+        set_eta_phase(rhs[math_topo_.get().slack_bus], 0, 1.0);
+        uncertainty_matrix.solver.solve_with_prefactorized_matrix(uncertainty_matrix.data,
+                                                                  uncertainty_matrix.permutation, rhs, solution);
+
+        std::vector<PhaseVector> covariance_column(n_bus_);
+        for (Idx bus = 0; bus != n_bus_; ++bus) {
+            for (Idx phase = 0; phase != n_phase_; ++phase) {
+                covariance_column[bus](phase) = get_u_phase(solution[bus], phase);
+            }
+        }
+        return covariance_column;
+    }
+
+    void calculate_voltage_uncertainty(UncertaintyMatrix const& uncertainty_matrix, double variance_normalization,
+                                       std::vector<PhaseVector> const& reference_covariance,
+                                       SolverOutput<sym>& output) {
+        bool const uses_slack_angle_reference = !reference_covariance.empty();
+        Idx const slack_bus = math_topo_.get().slack_bus;
+        PhaseVector const slack_voltage = as_phase_vector(output.u[slack_bus]);
+        double const slack_voltage_abs = std::abs(slack_voltage(0));
+        PhaseMatrix const slack_covariance =
+            variance_normalization * selected_voltage_covariance(uncertainty_matrix, slack_bus, slack_bus);
+        double const slack_angle_variance =
+            uses_slack_angle_reference && slack_voltage_abs > 0.0
+                ? 0.5 * std::real(slack_covariance(0, 0)) / (slack_voltage_abs * slack_voltage_abs)
+                : nan;
+
+        for (Idx bus = 0; bus != n_bus_; ++bus) {
+            PhaseMatrix const covariance =
+                variance_normalization * selected_voltage_covariance(uncertainty_matrix, bus, bus);
+            PhaseVector const voltage = as_phase_vector(output.u[bus]);
+            for (Idx phase = 0; phase != n_phase_; ++phase) {
+                double const voltage_abs = std::abs(voltage(phase));
+                if (voltage_abs == 0.0) {
+                    continue;
+                }
+                double const diagonal = std::real(covariance(phase, phase));
+                double const magnitude_sigma = variance_to_sigma(0.5 * diagonal, 0.5 * std::abs(diagonal));
+                set_phase_value(output.bus_uncertainty[bus].u_sigma, phase, magnitude_sigma);
+
+                if (!uses_slack_angle_reference) {
+                    set_phase_value(output.bus_uncertainty[bus].u_angle_sigma, phase, magnitude_sigma / voltage_abs);
+                    continue;
+                }
+                if (bus == slack_bus && phase == 0) {
+                    set_phase_value(output.bus_uncertainty[bus].u_angle_sigma, phase, 0.0);
+                    continue;
+                }
+                if (slack_voltage_abs == 0.0) {
+                    continue;
+                }
+
+                DoubleComplex const voltage_direction = voltage(phase) / voltage_abs;
+                DoubleComplex const slack_voltage_direction = slack_voltage(0) / slack_voltage_abs;
+                DoubleComplex const covariance_with_slack = variance_normalization * reference_covariance[bus](phase);
+                double const angle_variance =
+                    0.5 * diagonal / (voltage_abs * voltage_abs) + slack_angle_variance -
+                    std::real(std::conj(voltage_direction) * covariance_with_slack * slack_voltage_direction) /
+                        (voltage_abs * slack_voltage_abs);
+                double const angle_scale = 0.5 * std::abs(diagonal) / (voltage_abs * voltage_abs) +
+                                           std::abs(slack_angle_variance) +
+                                           std::abs(covariance_with_slack) / (voltage_abs * slack_voltage_abs);
+                set_phase_value(output.bus_uncertainty[bus].u_angle_sigma, phase,
+                                variance_to_sigma(angle_variance, angle_scale));
+            }
+        }
+    }
+
+    void calculate_branch_side_uncertainty(TerminalStateMatrix const& covariance, TerminalJacobian const& current_jac,
+                                           PhaseVector const& terminal_voltage, PhaseVector const& current,
+                                           RealValue<sym>& p_sigma, RealValue<sym>& q_sigma, RealValue<sym>& i_sigma,
+                                           Idx terminal_side) {
+        auto const current_covariance = current_jac * covariance * current_jac.adjoint();
+
+        TerminalJacobian h = TerminalJacobian::Zero();
+        h.template middleCols<n_phase_>(terminal_side * n_phase_) = current.conjugate().asDiagonal();
+        TerminalJacobian const k = terminal_voltage.asDiagonal() * current_jac.conjugate();
+        auto const power_covariance = h * covariance * h.adjoint() + k * covariance.conjugate() * k.adjoint();
+        auto const power_pseudo_covariance =
+            h * covariance * k.transpose() + k * covariance.conjugate() * h.transpose();
+
+        for (Idx phase = 0; phase != n_phase_; ++phase) {
+            double const current_diagonal = std::real(current_covariance(phase, phase));
+            if (std::abs(current(phase)) > 0.0) {
+                set_phase_value(i_sigma, phase,
+                                variance_to_sigma(0.5 * current_diagonal, 0.5 * std::abs(current_diagonal)));
+            }
+
+            double const power_diagonal = std::real(power_covariance(phase, phase));
+            double const power_pseudo_diagonal = std::real(power_pseudo_covariance(phase, phase));
+            double const scale = 0.5 * (std::abs(power_diagonal) + std::abs(power_pseudo_diagonal));
+            set_phase_value(p_sigma, phase, variance_to_sigma(0.5 * (power_diagonal + power_pseudo_diagonal), scale));
+            set_phase_value(q_sigma, phase, variance_to_sigma(0.5 * (power_diagonal - power_pseudo_diagonal), scale));
+        }
+    }
+
+    void calculate_branch_uncertainty(YBus<sym> const& y_bus, UncertaintyMatrix const& uncertainty_matrix,
+                                      double variance_normalization, SolverOutput<sym>& output) {
+        auto const& branch_bus_idx = y_bus.math_topology().branch_bus_idx;
+        auto const& branch_param = y_bus.math_model_param().branch_param;
+        for (Idx branch = 0; branch != std::ssize(branch_bus_idx); ++branch) {
+            auto const [from, to] = branch_bus_idx[branch];
+
+            TerminalStateMatrix covariance = TerminalStateMatrix::Zero();
+            covariance.template block<n_phase_, n_phase_>(0, 0) =
+                variance_normalization * selected_voltage_covariance(uncertainty_matrix, from, from);
+            covariance.template block<n_phase_, n_phase_>(0, n_phase_) =
+                variance_normalization * selected_voltage_covariance(uncertainty_matrix, from, to);
+            covariance.template block<n_phase_, n_phase_>(n_phase_, 0) =
+                variance_normalization * selected_voltage_covariance(uncertainty_matrix, to, from);
+            covariance.template block<n_phase_, n_phase_>(n_phase_, n_phase_) =
+                variance_normalization * selected_voltage_covariance(uncertainty_matrix, to, to);
+
+            PhaseVector const from_voltage =
+                from == disconnected ? PhaseVector::Zero() : as_phase_vector(output.u[from]);
+            PhaseVector const to_voltage = to == disconnected ? PhaseVector::Zero() : as_phase_vector(output.u[to]);
+            auto& branch_output = output.branch[branch];
+
+            TerminalJacobian from_current_jac;
+            from_current_jac.template leftCols<n_phase_>() = as_phase_matrix(branch_param[branch].yff());
+            from_current_jac.template rightCols<n_phase_>() = as_phase_matrix(branch_param[branch].yft());
+            calculate_branch_side_uncertainty(covariance, from_current_jac, from_voltage,
+                                              as_phase_vector(branch_output.i_f), branch_output.p_f_sigma,
+                                              branch_output.q_f_sigma, branch_output.i_f_sigma, 0);
+
+            TerminalJacobian to_current_jac;
+            to_current_jac.template leftCols<n_phase_>() = as_phase_matrix(branch_param[branch].ytf());
+            to_current_jac.template rightCols<n_phase_>() = as_phase_matrix(branch_param[branch].ytt());
+            calculate_branch_side_uncertainty(covariance, to_current_jac, to_voltage,
+                                              as_phase_vector(branch_output.i_t), branch_output.p_t_sigma,
+                                              branch_output.q_t_sigma, branch_output.i_t_sigma, 1);
+        }
+    }
+
+    void calculate_state_estimation_uncertainty(YBus<sym> const& y_bus, MeasuredValues<sym> const& measured_values,
+                                                SolverOutput<sym>& output) {
+        // This propagation adopts PGM's circular/proper effective complex-error model. The selected inverse
+        // supplies Cov(U); voltage/current magnitudes and P/Q are first-order marginals at the final IL point.
+        if (sparse_solver_.has_pivot_perturbation()) {
+            throw SparseMatrixError{};
+        }
+
+        output.bus_uncertainty.resize(n_bus_);
+        double const variance_normalization = measured_values.variance_normalization();
+
+        // Rebuild the unfactorized augmented matrix, then extend its sparse structure with every covariance block
+        // required by a closed bus neighborhood. Structural zeros leave the matrix unchanged while making those
+        // inverse blocks available to the selected-inverse sweep.
+        prepare_matrix(y_bus, measured_values);
+        UncertaintyMatrix uncertainty_matrix{y_bus.row_indptr_lu(), y_bus.col_indices_lu(), y_bus.row_indptr(),
+                                             y_bus.col_indices(), data_gain_};
+        uncertainty_matrix.solver.prefactorize(uncertainty_matrix.data, uncertainty_matrix.permutation);
+
+        // Without an angle measurement, IL reports every phase relative to the slack phase-a angle. Preserve
+        // the matching cross-covariances before the destructive selected-inverse sweep.
+        auto const reference_covariance =
+            calculate_reference_voltage_covariance(measured_values.has_angle(), uncertainty_matrix);
+
+        uncertainty_matrix.solver.inplace_selective_inverse_with_prefactorized_matrix(uncertainty_matrix.data,
+                                                                                      uncertainty_matrix.permutation);
+        calculate_bus_injection_uncertainty(y_bus, uncertainty_matrix, variance_normalization, output);
+        calculate_voltage_uncertainty(uncertainty_matrix, variance_normalization, reference_covariance, output);
+        calculate_branch_uncertainty(y_bus, uncertainty_matrix, variance_normalization, output);
     }
 
     // The variance is not scaled as an approximation under the assumptions of:

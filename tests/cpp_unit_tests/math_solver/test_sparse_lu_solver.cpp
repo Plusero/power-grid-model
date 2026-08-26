@@ -461,7 +461,67 @@ TEST_CASE("Test Sparse LU solver") {
                 check_selective_inverse_fill_in_nonzero(matrix_data, 3, 1);
                 check_selective_inverse_result(matrix_data, expected_inverse);
             }
+
+            SUBCASE("Extended covariance structure provides closed-neighborhood inverse blocks") {
+                // Three leaves connected to center bus 3. Leaves are eliminated first, so the original factor pattern
+                // has no leaf-to-leaf entries. The center's closed neighborhood requests all three covariance pairs.
+                IdxVector const source_row_indptr{0, 2, 4, 6, 10};
+                IdxVector const source_col_indices{0, 3, 1, 3, 2, 3, 0, 1, 2, 3};
+                auto const scaled_identity = [](double value) { return Tensor{{value, 0.0}, {0.0, value}}; };
+                std::vector<Tensor> const source_data{
+                    scaled_identity(4.0), scaled_identity(0.2), scaled_identity(5.0), scaled_identity(0.3),
+                    scaled_identity(6.0), scaled_identity(0.4), scaled_identity(0.2), scaled_identity(0.3),
+                    scaled_identity(0.4), scaled_identity(7.0),
+                };
+                Eigen::MatrixXd const expected_inverse =
+                    assemble_dense_matrix(source_row_indptr, source_col_indices, source_data).inverse();
+
+                ExtendedSparseLUData<Tensor, Array, Array> extended{source_row_indptr, source_col_indices,
+                                                                    source_row_indptr, source_col_indices, source_data};
+                CHECK(extended.structure.col_indices.size() == 16);
+                CHECK(std::ranges::count(extended.structure.map_to_source, Idx{-1}) == 6);
+
+                extended.solver.prefactorize(extended.data, extended.permutation);
+                extended.solver.inplace_selective_inverse_with_prefactorized_matrix(extended.data,
+                                                                                    extended.permutation);
+
+                BlockSparseMatrix const selected_inverse{
+                    .row_indptr = extended.structure.row_indptr,
+                    .col_indices = extended.structure.col_indices,
+                    .diag_lu = extended.structure.diag,
+                    .data = extended.data,
+                };
+                check_selective_inverse_result(selected_inverse, expected_inverse);
+            }
         }
+    }
+}
+
+TEST_CASE("Extended covariance structure stays sparse for a reordered ternary tree") {
+    for (Idx const size : {Idx{10}, Idx{100}, Idx{1000}}) {
+        std::vector<IdxVector> adjacency(size);
+        for (Idx bus = 0; bus != size; ++bus) {
+            adjacency[bus].push_back(bus);
+        }
+        for (Idx original_child = 1; original_child != size; ++original_child) {
+            Idx const child = size - 1 - original_child;
+            Idx const parent = size - 1 - (original_child - 1) / 3;
+            adjacency[child].push_back(parent);
+            adjacency[parent].push_back(child);
+        }
+
+        IdxVector row_indptr(size + 1);
+        IdxVector col_indices;
+        for (Idx row = 0; row != size; ++row) {
+            std::ranges::sort(adjacency[row]);
+            row_indptr[row] = narrow_cast<Idx>(col_indices.size());
+            col_indices.insert(col_indices.end(), adjacency[row].begin(), adjacency[row].end());
+        }
+        row_indptr[size] = narrow_cast<Idx>(col_indices.size());
+
+        auto const structure = build_extended_covariance_structure(row_indptr, col_indices, row_indptr, col_indices);
+        CAPTURE(size);
+        CHECK(structure.col_indices.size() <= static_cast<size_t>(25 * size));
     }
 }
 

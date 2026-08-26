@@ -22,12 +22,17 @@
 #include "../common/three_phase_tensor.hpp"
 #include "../common/timer.hpp"
 
+#include <Eigen/Dense>
+
 #include <algorithm>
+#include <array>
 #include <cassert>
+#include <cmath>
 #include <complex>
 #include <concepts>
 #include <functional>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace power_grid_model::math_solver {
@@ -112,6 +117,35 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
   private:
     enum class Order : IntS { row_major = 0, column_major = 1 };
 
+    static constexpr int n_phase_ = is_symmetric_v<sym> ? 1 : 3;
+    static constexpr int state_size_ = 2 * n_phase_;
+    static constexpr int terminal_state_size_ = 2 * state_size_;
+
+    using PhaseVector = Eigen::Matrix<DoubleComplex, n_phase_, 1>;
+    using PhaseMatrix = Eigen::Matrix<DoubleComplex, n_phase_, n_phase_>;
+    using StateVector = Eigen::Matrix<double, state_size_, 1>;
+    using StateRow = Eigen::Matrix<double, 1, state_size_>;
+    using StateMatrix = Eigen::Matrix<double, state_size_, state_size_>;
+    using TerminalStateMatrix = Eigen::Matrix<double, terminal_state_size_, terminal_state_size_>;
+    using TerminalStateRow = Eigen::Matrix<double, 1, terminal_state_size_>;
+    using ComplexStateJacobian = Eigen::Matrix<DoubleComplex, n_phase_, state_size_>;
+    using ComplexTerminalJacobian = Eigen::Matrix<DoubleComplex, n_phase_, terminal_state_size_>;
+    using RealTerminalJacobian = Eigen::Matrix<double, n_phase_, terminal_state_size_>;
+    using VirtualAngleSolutions = std::array<std::vector<NRSERhs<sym>>, n_phase_>;
+    using SparseSolverType = SparseLUSolver<NRSEGainBlock<sym>, NRSERhs<sym>, NRSEUnknown<sym>>;
+    using UncertaintyMatrix = ExtendedSparseLUData<NRSEGainBlock<sym>, NRSERhs<sym>, NRSEUnknown<sym>>;
+    using SparseStateVector = std::pair<Idx, StateVector>;
+
+    struct UncertaintyContext {
+        double variance_normalization{1.0};
+        double virtual_angle_weight{};
+        VirtualAngleSolutions virtual_angle_solutions{};
+        std::vector<StateVector> reference_covariance{};
+
+        bool uses_angle_reference() const { return !reference_covariance.empty(); }
+        bool has_virtual_angles() const { return !virtual_angle_solutions.front().empty(); }
+    };
+
     struct NRSEVoltageState {
         ComplexTensor<sym> ui_ui_conj;
         ComplexTensor<sym> uj_uj_conj;
@@ -165,6 +199,11 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
 
     SolverOutput<sym> run_state_estimation(YBus<sym> const& y_bus, StateEstimationInput<sym> const& input,
                                            double err_tol, Idx max_iter, Logger& log) {
+        return run_state_estimation(y_bus, input, err_tol, max_iter, false, log);
+    }
+
+    SolverOutput<sym> run_state_estimation(YBus<sym> const& y_bus, StateEstimationInput<sym> const& input,
+                                           double err_tol, Idx max_iter, bool calculate_uncertainty, Logger& log) {
         // prepare
         Timer main_timer;
         Timer sub_timer;
@@ -205,6 +244,10 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         sub_timer = Timer{log, LogEvent::calculate_math_result};
         detail::calculate_se_result<sym>(y_bus, measured_values, output);
 
+        if (calculate_uncertainty) {
+            calculate_state_estimation_uncertainty(y_bus, measured_values, output);
+        }
+
         // Manually stop timers to avoid "Max number of iterations" to be included in the timing.
         sub_timer.stop();
         main_timer.stop();
@@ -226,8 +269,8 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
     // voltage of current iteration
     std::vector<NRSERhs<sym>> x_;
     // solver
-    SparseLUSolver<NRSEGainBlock<sym>, NRSERhs<sym>, NRSEUnknown<sym>> sparse_solver_;
-    SparseLUSolver<NRSEGainBlock<sym>, NRSERhs<sym>, NRSEUnknown<sym>>::BlockPermArray perm_;
+    SparseSolverType sparse_solver_;
+    SparseSolverType::BlockPermArray perm_;
 
     void initialize_unknown(ComplexValueVector<sym>& initial_u, MeasuredValues<sym> const& measured_values) {
         using statistics::detail::cabs_or_real;
@@ -461,7 +504,7 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         auto const hm_ui_ui_ys = hm_complex_form(-ys, u_state.ui_ui_conj);
         auto const nl_ui_ui_ys = dot(hm_ui_ui_ys, u_state.abs_ui_inv);
         auto const f_x_complex = sum_row(hm_ui_ui_ys);
-        auto const f_x_complex_abs_ui_inv = sum_row(nl_ui_ui_ys);
+        auto const f_x_complex_abs_ui_inv = dot(u_state.abs_ui_inv, f_x_complex);
 
         auto jac_block = calculate_jacobian(hm_ui_ui_ys, nl_ui_ui_ys);
         jac_block += jacobian_diagonal_component(f_x_complex_abs_ui_inv, f_x_complex);
@@ -530,11 +573,11 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
                                                   auto const& u_state, Order const order,
                                                   CurrentSensorCalcParam<sym> const& current_sensor) {
         auto const hm_u_chi_u_chi_y_xi_xi = hm_complex_form(y_xi_xi, u_state.u_chi_u_chi_conj(order));
-        auto const hm_hat_u_chi_u_chi_y_xi_xi = dot(hm_u_chi_u_chi_y_xi_xi, u_state.abs_u_chi_inv(order));
+        auto const hm_hat_u_chi_u_chi_y_xi_xi = dot(u_state.abs_u_chi_inv(order), hm_u_chi_u_chi_y_xi_xi);
         auto const nl_hat_u_chi_u_chi_y_xi_xi = dot(hm_hat_u_chi_u_chi_y_xi_xi, u_state.abs_u_chi_inv(order));
 
         auto const hm_u_chi_u_psi_y_xi_mu = hm_complex_form(y_xi_mu, u_state.u_chi_u_psi_conj(order));
-        auto const hm_hat_u_chi_u_psi_y_xi_mu = dot(hm_u_chi_u_psi_y_xi_mu, u_state.abs_u_chi_inv(order));
+        auto const hm_hat_u_chi_u_psi_y_xi_mu = dot(u_state.abs_u_chi_inv(order), hm_u_chi_u_psi_y_xi_mu);
         auto const nl_hat_u_chi_u_psi_y_xi_mu = dot(hm_hat_u_chi_u_psi_y_xi_mu, u_state.abs_u_psi_inv(order));
 
         auto const f_x_complex = sum_row(hm_hat_u_chi_u_chi_y_xi_xi + hm_hat_u_chi_u_psi_y_xi_mu);
@@ -706,10 +749,10 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         auto const w_q = diagonal_inverse(measured_flow.imag_component.variance);
 
         NRSEJacobian product{};
-        product.dP_dt = dot(w_p, jac_block.dP_dt);
-        product.dP_dv = dot(w_q, jac_block.dQ_dt);
-        product.dQ_dt = dot(w_p, jac_block.dP_dv);
-        product.dQ_dv = dot(w_q, jac_block.dQ_dv);
+        product.dP_dt = dot(hermitian_transpose(jac_block.dP_dt), w_p);
+        product.dP_dv = dot(hermitian_transpose(jac_block.dQ_dt), w_q);
+        product.dQ_dt = dot(hermitian_transpose(jac_block.dP_dv), w_p);
+        product.dQ_dv = dot(hermitian_transpose(jac_block.dQ_dv), w_q);
         return product;
     }
 
@@ -775,6 +818,342 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
     /// @return  -M(u1, u2, y12) + j * H(u1, u2, y12)
     static ComplexTensor<sym> hm_complex_form(ComplexTensor<sym> const& yij, ComplexTensor<sym> const& ui_uj_conj) {
         return conj(yij) * ui_uj_conj;
+    }
+
+    static PhaseVector as_phase_vector(ComplexValue<sym> const& value) {
+        PhaseVector result;
+        if constexpr (is_symmetric_v<sym>) {
+            result(0) = value;
+        } else {
+            result = value.matrix();
+        }
+        return result;
+    }
+
+    static PhaseMatrix as_phase_matrix(ComplexTensor<sym> const& value) {
+        PhaseMatrix result;
+        if constexpr (is_symmetric_v<sym>) {
+            result(0, 0) = value;
+        } else {
+            result = value.matrix();
+        }
+        return result;
+    }
+
+    static StateVector state_vector(NRSERhs<sym> const& value) {
+        return value.matrix().template topRows<state_size_>();
+    }
+
+    static void set_phase_value(RealValue<sym>& value, Idx phase, double phase_value) {
+        if constexpr (is_symmetric_v<sym>) {
+            (void)phase;
+            value = phase_value;
+        } else {
+            value(phase) = phase_value;
+        }
+    }
+
+    static double variance_to_sigma(double variance, double scale) {
+        double const tolerance = 1000.0 * std::numeric_limits<double>::epsilon() * std::max(1.0, scale);
+        if (!std::isfinite(variance) || variance < -tolerance) {
+            return nan;
+        }
+        return std::sqrt(std::max(0.0, variance));
+    }
+
+    VirtualAngleSolutions calculate_virtual_angle_solutions(MeasuredValues<sym> const& measured_values,
+                                                            double& virtual_angle_weight,
+                                                            UncertaintyMatrix& uncertainty_matrix) {
+        VirtualAngleSolutions solutions;
+        if (measured_values.has_angle()) {
+            return solutions;
+        }
+
+        Idx const virtual_angle_bus = measured_values.has_voltage(math_topo_.get().slack_bus)
+                                          ? math_topo_.get().slack_bus
+                                          : measured_values.first_voltage_measurement();
+        virtual_angle_weight = 1.0 / measured_values.voltage_var(virtual_angle_bus);
+
+        std::vector<NRSERhs<sym>> rhs(n_bus_);
+        for (Idx phase = 0; phase != n_phase_; ++phase) {
+            std::ranges::for_each(rhs, [](auto& value) { value.clear(); });
+            rhs[virtual_angle_bus](phase, 0) = 1.0;
+            solutions[phase].resize(n_bus_);
+            uncertainty_matrix.solver.solve_with_prefactorized_matrix(
+                uncertainty_matrix.data, uncertainty_matrix.permutation, rhs, solutions[phase]);
+        }
+        return solutions;
+    }
+
+    std::vector<StateVector> calculate_reference_covariance(UncertaintyContext const& context,
+                                                            UncertaintyMatrix& uncertainty_matrix) {
+        if (!context.has_virtual_angles()) {
+            return {};
+        }
+
+        Idx const reference_bus = math_topo_.get().slack_bus;
+        std::vector<NRSERhs<sym>> rhs(n_bus_);
+        std::vector<NRSERhs<sym>> solution(n_bus_);
+        rhs[reference_bus](0, 0) = 1.0;
+        uncertainty_matrix.solver.solve_with_prefactorized_matrix(uncertainty_matrix.data,
+                                                                  uncertainty_matrix.permutation, rhs, solution);
+
+        std::vector<StateVector> reference_covariance(n_bus_);
+        for (Idx bus = 0; bus != n_bus_; ++bus) {
+            StateVector covariance = state_vector(solution[bus]);
+            for (Idx phase = 0; phase != n_phase_; ++phase) {
+                auto const& virtual_solution = context.virtual_angle_solutions[phase];
+                covariance.noalias() -= context.virtual_angle_weight * state_vector(virtual_solution[bus]) *
+                                        state_vector(virtual_solution[reference_bus])(0);
+            }
+            reference_covariance[bus] = context.variance_normalization * covariance;
+        }
+        return reference_covariance;
+    }
+
+    static StateMatrix raw_state_covariance(UncertaintyMatrix const& uncertainty_matrix, Idx row, Idx col) {
+        if (row == disconnected || col == disconnected) {
+            return StateMatrix::Zero();
+        }
+
+        Idx const idx = uncertainty_matrix.structure.find_entry(row, col);
+        return uncertainty_matrix.data[idx].matrix().template topLeftCorner<state_size_, state_size_>();
+    }
+
+    static StateMatrix selected_state_covariance(UncertaintyMatrix const& uncertainty_matrix, Idx row, Idx col,
+                                                 UncertaintyContext const& context) {
+        if (row == disconnected || col == disconnected) {
+            return StateMatrix::Zero();
+        }
+
+        StateMatrix covariance = raw_state_covariance(uncertainty_matrix, row, col);
+        if (context.has_virtual_angles()) {
+            for (Idx phase = 0; phase != n_phase_; ++phase) {
+                auto const& virtual_solution = context.virtual_angle_solutions[phase];
+                covariance.noalias() -= context.virtual_angle_weight * state_vector(virtual_solution[row]) *
+                                        state_vector(virtual_solution[col]).transpose();
+            }
+        }
+        return context.variance_normalization * covariance;
+    }
+
+    StateMatrix reported_state_covariance(UncertaintyMatrix const& uncertainty_matrix, Idx row, Idx col,
+                                          UncertaintyContext const& context) {
+        StateMatrix covariance = selected_state_covariance(uncertainty_matrix, row, col, context);
+        if (!context.uses_angle_reference() || row == disconnected || col == disconnected) {
+            return covariance;
+        }
+
+        StateVector angle_reference_direction = StateVector::Zero();
+        angle_reference_direction.template head<n_phase_>().setOnes();
+        Idx const reference_bus = math_topo_.get().slack_bus;
+        double const reference_variance = context.reference_covariance[reference_bus](0);
+        covariance.noalias() -= context.reference_covariance[row] * angle_reference_direction.transpose();
+        covariance.noalias() -= angle_reference_direction * context.reference_covariance[col].transpose();
+        covariance.noalias() += reference_variance * angle_reference_direction * angle_reference_direction.transpose();
+        return covariance;
+    }
+
+    std::pair<double, double> covariance_quadratic_form(std::vector<SparseStateVector> const& rhs,
+                                                        UncertaintyMatrix const& uncertainty_matrix,
+                                                        UncertaintyContext const& context) const {
+        double variance{};
+        for (auto const& [left_bus, left_rhs] : rhs) {
+            for (auto const& [right_bus, right_rhs] : rhs) {
+                variance += left_rhs.dot(raw_state_covariance(uncertainty_matrix, left_bus, right_bus) * right_rhs);
+            }
+        }
+        double scale = std::abs(variance);
+
+        if (context.has_virtual_angles()) {
+            for (Idx phase = 0; phase != n_phase_; ++phase) {
+                double projection{};
+                auto const& virtual_solution = context.virtual_angle_solutions[phase];
+                for (auto const& [bus, rhs_block] : rhs) {
+                    projection += rhs_block.dot(state_vector(virtual_solution[bus]));
+                }
+                double const correction = context.virtual_angle_weight * projection * projection;
+                variance -= correction;
+                scale += std::abs(correction);
+            }
+        }
+        return {context.variance_normalization * variance, context.variance_normalization * scale};
+    }
+
+    ComplexStateJacobian voltage_jacobian(Idx bus, SolverOutput<sym> const& output) {
+        PhaseVector const voltage = as_phase_vector(output.u[bus]);
+        PhaseVector const voltage_direction = as_phase_vector(exp(1.0i * x_[bus].theta()));
+        ComplexStateJacobian jacobian;
+        jacobian.template leftCols<n_phase_>() = (1.0i * voltage).asDiagonal();
+        jacobian.template rightCols<n_phase_>() = voltage_direction.asDiagonal();
+        return jacobian;
+    }
+
+    void calculate_bus_injection_uncertainty(YBus<sym> const& y_bus, UncertaintyMatrix const& uncertainty_matrix,
+                                             UncertaintyContext const& context, SolverOutput<sym>& output) {
+        for (Idx bus = 0; bus != n_bus_; ++bus) {
+            PhaseVector current = PhaseVector::Zero();
+            for (Idx idx = y_bus.row_indptr()[bus]; idx != y_bus.row_indptr()[bus + 1]; ++idx) {
+                current.noalias() +=
+                    as_phase_matrix(y_bus.admittance()[idx]) * as_phase_vector(output.u[y_bus.col_indices()[idx]]);
+            }
+
+            PhaseVector const voltage = as_phase_vector(output.u[bus]);
+            std::vector<std::pair<Idx, ComplexStateJacobian>> power_jacobian_blocks;
+            power_jacobian_blocks.reserve(y_bus.row_indptr()[bus + 1] - y_bus.row_indptr()[bus]);
+            for (Idx idx = y_bus.row_indptr()[bus]; idx != y_bus.row_indptr()[bus + 1]; ++idx) {
+                Idx const col = y_bus.col_indices()[idx];
+                ComplexStateJacobian const d_u = voltage_jacobian(col, output);
+                ComplexStateJacobian const d_i = as_phase_matrix(y_bus.admittance()[idx]) * d_u;
+                ComplexStateJacobian d_s = voltage.asDiagonal() * d_i.conjugate();
+                if (col == bus) {
+                    d_s.noalias() += current.conjugate().asDiagonal() * d_u;
+                }
+                power_jacobian_blocks.emplace_back(col, std::move(d_s));
+            }
+
+            for (Idx phase = 0; phase != n_phase_; ++phase) {
+                std::vector<SparseStateVector> rhs_p;
+                std::vector<SparseStateVector> rhs_q;
+                rhs_p.reserve(power_jacobian_blocks.size());
+                rhs_q.reserve(power_jacobian_blocks.size());
+                for (auto const& [col, jacobian] : power_jacobian_blocks) {
+                    rhs_p.emplace_back(col, jacobian.real().row(phase).transpose());
+                    rhs_q.emplace_back(col, jacobian.imag().row(phase).transpose());
+                }
+
+                auto const [p_variance, p_scale] = covariance_quadratic_form(rhs_p, uncertainty_matrix, context);
+                auto const [q_variance, q_scale] = covariance_quadratic_form(rhs_q, uncertainty_matrix, context);
+                set_phase_value(output.bus_uncertainty[bus].p_sigma, phase, variance_to_sigma(p_variance, p_scale));
+                set_phase_value(output.bus_uncertainty[bus].q_sigma, phase, variance_to_sigma(q_variance, q_scale));
+            }
+        }
+    }
+
+    void calculate_voltage_uncertainty(UncertaintyMatrix const& uncertainty_matrix, UncertaintyContext const& context,
+                                       SolverOutput<sym>& output) {
+        for (Idx bus = 0; bus != n_bus_; ++bus) {
+            StateMatrix const covariance = reported_state_covariance(uncertainty_matrix, bus, bus, context);
+            PhaseVector const voltage = as_phase_vector(output.u[bus]);
+            double const scale = covariance.cwiseAbs().maxCoeff();
+            for (Idx phase = 0; phase != n_phase_; ++phase) {
+                if (std::abs(voltage(phase)) == 0.0) {
+                    continue;
+                }
+                set_phase_value(output.bus_uncertainty[bus].u_angle_sigma, phase,
+                                variance_to_sigma(covariance(phase, phase), scale));
+                set_phase_value(output.bus_uncertainty[bus].u_sigma, phase,
+                                variance_to_sigma(covariance(n_phase_ + phase, n_phase_ + phase), scale));
+            }
+        }
+    }
+
+    void calculate_branch_side_uncertainty(TerminalStateMatrix const& covariance,
+                                           ComplexTerminalJacobian const& voltage_jacobian,
+                                           ComplexTerminalJacobian const& current_jacobian,
+                                           PhaseVector const& terminal_voltage, PhaseVector const& current,
+                                           RealValue<sym>& p_sigma, RealValue<sym>& q_sigma, RealValue<sym>& i_sigma,
+                                           Idx terminal_side) {
+        ComplexTerminalJacobian terminal_voltage_jacobian = ComplexTerminalJacobian::Zero();
+        terminal_voltage_jacobian.template middleCols<state_size_>(terminal_side * state_size_) =
+            voltage_jacobian.template middleCols<state_size_>(terminal_side * state_size_);
+        ComplexTerminalJacobian const power_jacobian = current.conjugate().asDiagonal() * terminal_voltage_jacobian +
+                                                       terminal_voltage.asDiagonal() * current_jacobian.conjugate();
+        RealTerminalJacobian const p_jacobian = power_jacobian.real();
+        RealTerminalJacobian const q_jacobian = power_jacobian.imag();
+        double const covariance_scale = covariance.cwiseAbs().maxCoeff();
+
+        for (Idx phase = 0; phase != n_phase_; ++phase) {
+            double const p_variance = p_jacobian.row(phase).dot(covariance * p_jacobian.row(phase).transpose());
+            double const q_variance = q_jacobian.row(phase).dot(covariance * q_jacobian.row(phase).transpose());
+            double const p_scale = covariance_scale * p_jacobian.row(phase).squaredNorm();
+            double const q_scale = covariance_scale * q_jacobian.row(phase).squaredNorm();
+            set_phase_value(p_sigma, phase, variance_to_sigma(p_variance, p_scale));
+            set_phase_value(q_sigma, phase, variance_to_sigma(q_variance, q_scale));
+
+            if (std::abs(current(phase)) == 0.0) {
+                continue;
+            }
+            TerminalStateRow const current_magnitude_jacobian =
+                (std::conj(current(phase)) / std::abs(current(phase)) * current_jacobian.row(phase)).real();
+            double const i_variance =
+                current_magnitude_jacobian.dot(covariance * current_magnitude_jacobian.transpose());
+            double const i_scale = covariance_scale * current_magnitude_jacobian.squaredNorm();
+            set_phase_value(i_sigma, phase, variance_to_sigma(i_variance, i_scale));
+        }
+    }
+
+    void calculate_branch_uncertainty(YBus<sym> const& y_bus, UncertaintyMatrix const& uncertainty_matrix,
+                                      UncertaintyContext const& context, SolverOutput<sym>& output) {
+        auto const& branch_bus_idx = y_bus.math_topology().branch_bus_idx;
+        auto const& branch_param = y_bus.math_model_param().branch_param;
+        for (Idx branch = 0; branch != std::ssize(branch_bus_idx); ++branch) {
+            auto const [from, to] = branch_bus_idx[branch];
+            TerminalStateMatrix covariance = TerminalStateMatrix::Zero();
+            covariance.template block<state_size_, state_size_>(0, 0) =
+                reported_state_covariance(uncertainty_matrix, from, from, context);
+            covariance.template block<state_size_, state_size_>(0, state_size_) =
+                reported_state_covariance(uncertainty_matrix, from, to, context);
+            covariance.template block<state_size_, state_size_>(state_size_, 0) =
+                reported_state_covariance(uncertainty_matrix, to, from, context);
+            covariance.template block<state_size_, state_size_>(state_size_, state_size_) =
+                reported_state_covariance(uncertainty_matrix, to, to, context);
+
+            ComplexTerminalJacobian d_u = ComplexTerminalJacobian::Zero();
+            PhaseVector from_voltage = PhaseVector::Zero();
+            PhaseVector to_voltage = PhaseVector::Zero();
+            if (from != disconnected) {
+                from_voltage = as_phase_vector(output.u[from]);
+                d_u.template leftCols<state_size_>() = voltage_jacobian(from, output);
+            }
+            if (to != disconnected) {
+                to_voltage = as_phase_vector(output.u[to]);
+                d_u.template rightCols<state_size_>() = voltage_jacobian(to, output);
+            }
+
+            ComplexTerminalJacobian from_current_jacobian;
+            from_current_jacobian.template leftCols<state_size_>() =
+                as_phase_matrix(branch_param[branch].yff()) * d_u.template leftCols<state_size_>();
+            from_current_jacobian.template rightCols<state_size_>() =
+                as_phase_matrix(branch_param[branch].yft()) * d_u.template rightCols<state_size_>();
+            auto& branch_output = output.branch[branch];
+            calculate_branch_side_uncertainty(covariance, d_u, from_current_jacobian, from_voltage,
+                                              as_phase_vector(branch_output.i_f), branch_output.p_f_sigma,
+                                              branch_output.q_f_sigma, branch_output.i_f_sigma, 0);
+
+            ComplexTerminalJacobian to_current_jacobian;
+            to_current_jacobian.template leftCols<state_size_>() =
+                as_phase_matrix(branch_param[branch].ytf()) * d_u.template leftCols<state_size_>();
+            to_current_jacobian.template rightCols<state_size_>() =
+                as_phase_matrix(branch_param[branch].ytt()) * d_u.template rightCols<state_size_>();
+            calculate_branch_side_uncertainty(covariance, d_u, to_current_jacobian, to_voltage,
+                                              as_phase_vector(branch_output.i_t), branch_output.p_t_sigma,
+                                              branch_output.q_t_sigma, branch_output.i_t_sigma, 1);
+        }
+    }
+
+    void calculate_state_estimation_uncertainty(YBus<sym> const& y_bus, MeasuredValues<sym> const& measured_values,
+                                                SolverOutput<sym>& output) {
+        // The iteration factors precede its final accepted update. Rebuild and factor the augmented Gauss-Newton
+        // matrix at the returned state, without numerical pivot perturbation, before propagating its covariance.
+        prepare_matrix_and_rhs(y_bus, measured_values, output.u);
+        UncertaintyMatrix uncertainty_matrix{y_bus.row_indptr_lu(), y_bus.col_indices_lu(), y_bus.row_indptr(),
+                                             y_bus.col_indices(), data_gain_};
+        uncertainty_matrix.solver.prefactorize(uncertainty_matrix.data, uncertainty_matrix.permutation);
+
+        output.bus_uncertainty.resize(n_bus_);
+        UncertaintyContext context;
+        context.variance_normalization = measured_values.variance_normalization();
+        context.virtual_angle_solutions =
+            calculate_virtual_angle_solutions(measured_values, context.virtual_angle_weight, uncertainty_matrix);
+        context.reference_covariance = calculate_reference_covariance(context, uncertainty_matrix);
+
+        // The selected-inverse sweep is destructive, so it follows every solve with the fresh factors.
+        uncertainty_matrix.solver.inplace_selective_inverse_with_prefactorized_matrix(uncertainty_matrix.data,
+                                                                                      uncertainty_matrix.permutation);
+        calculate_bus_injection_uncertainty(y_bus, uncertainty_matrix, context, output);
+        calculate_voltage_uncertainty(uncertainty_matrix, context, output);
+        calculate_branch_uncertainty(y_bus, uncertainty_matrix, context, output);
     }
 
     double iterate_unknown(ComplexValueVector<sym>& u, MeasuredValues<sym> measured_values) {
