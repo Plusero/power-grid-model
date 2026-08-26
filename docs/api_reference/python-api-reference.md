@@ -104,6 +104,7 @@ This includes all miscellaneous type hints not under dataset or categories.
 .. autofunction:: power_grid_model.utils.get_dataset_scenario
 .. autofunction:: power_grid_model.utils.get_dataset_batch_size
 .. autofunction:: power_grid_model.utils.get_component_batch_size
+.. autofunction:: power_grid_model.utils.create_state_estimation_monte_carlo_updates
 .. autofunction:: power_grid_model.utils.is_columnar
 .. autofunction:: power_grid_model.utils.is_sparse
 .. autofunction:: power_grid_model.utils.json_deserialize

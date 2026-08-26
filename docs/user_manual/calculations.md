@@ -75,6 +75,68 @@ Output:
 - Power flow through branches
 - Deviation between measurement values and estimated state
 
+##### Analytical output uncertainty
+
+Iterative-linear and Newton-Raphson state estimation can also calculate approximate standard deviations for their
+estimated outputs. The following uses Newton-Raphson; replace the calculation method with `"iterative_linear"` to use
+the iterative-linear formulation.
+
+See also the
+[State Estimation UQ Example](../examples/State%20Estimation%20UQ%20Example.ipynb) for a complete runnable comparison of
+both methods through the same public API.
+
+```python
+result = model.calculate_state_estimation(
+    calculation_method="newton_raphson",
+    calculate_uncertainty=True,
+)
+```
+
+The additional output attributes are:
+
+- nodes: `u_pu_sigma`, `u_sigma`, `u_angle_sigma`, `p_sigma`, and `q_sigma`;
+- two-terminal branches: `p_from_sigma`, `q_from_sigma`, `i_from_sigma`, `p_to_sigma`, `q_to_sigma`, and
+  `i_to_sigma`;
+- three-terminal branches: `p_1_sigma`, `q_1_sigma`, `i_1_sigma`, and the corresponding `_2_sigma` and
+  `_3_sigma` attributes.
+
+Sigma attributes use the same physical unit and array shape as the corresponding output attribute; angle standard
+deviations are in radians. In an asymmetric calculation, each value contains one standard deviation per phase. There is
+no `s_sigma` output because active- and reactive-power uncertainty is reported separately.
+
+`calculate_uncertainty` defaults to `False`. The sigma attributes remain present in the output schema, but their values
+are `NaN` when uncertainty calculation is not requested. The option is supported with both
+`calculation_method="iterative_linear"` and `calculation_method="newton_raphson"`.
+
+The two methods use different analytical models and can therefore produce different sigmas. Iterative-linear UQ uses
+PGM's adopted proper (circular) complex-voltage error model, including its factor of $1/2$ for real marginals.
+Newton-Raphson UQ instead uses a real polar voltage-state covariance from a Gauss-Newton matrix rebuilt at the returned
+state; ordinary real first-order propagation applies, without the proper-complex assumption or factor of $1/2$. See the
+[iterative-linear formulation](../algorithms/se-algorithms.md#state-estimate-output-uncertainty) and the
+[Newton-Raphson formulation](../algorithms/se-algorithms.md#newton-raphson-output-uncertainty) for details.
+
+Both results are local analytical approximations conditional on the final network, processed measurements, and voltage
+reference. They assume independent processed measurement channels and do not include nonlinear curvature, model or
+topology uncertainty, bad-data selection, or uncertainty in the preceding iteration.
+
+If no voltage-angle measurement is present, voltage angles and their standard deviations use phase A of the slack bus
+as their reference. The slack phase-A `u_angle_sigma` is therefore zero. Newton-Raphson UQ first removes the artificial
+noise contribution of its deterministic virtual-angle rows and then projects the covariance to this reported reference.
+
+```{warning}
+Current-magnitude linearization is undefined at zero current. `i_from_sigma`, `i_to_sigma`, or the corresponding
+three-terminal field is therefore `NaN` when the estimated terminal current is zero.
+
+Voltage magnitude and angle sigmas are unavailable at zero estimated voltage and are therefore `NaN`.
+
+Uncertainty calculation raises `SparseMatrixError` when numerical LU pivot perturbation is required. The selected
+inverse is not valid for a numerically perturbed factorization.
+
+Ideal links have no separately identifiable branch-flow uncertainty, so their branch sigma fields are `NaN`. Node
+voltage sigma fields remain available for nodes joined by connected ideal links, but the injection of each individual
+node cannot be separated: `p_sigma` and `q_sigma` are `NaN` for every such node.
+```
+
 In order to perform a state estimation, the system should be observable.
 If the system is not observable, the calculation will raise either a `NotObservableError` or a `SparseMatrixError`.
 In short, meeting the requirement of observability indicates that the system is either an overdetermined system (when

@@ -23,6 +23,7 @@ from power_grid_model._core.dataset_definitions import (
     DatasetType,
     _map_to_component_types,
 )
+from power_grid_model._core.power_grid_meta import initialize_array
 from power_grid_model._core.serialization import (
     json_deserialize,
     json_serialize,
@@ -34,6 +35,7 @@ from power_grid_model._core.utils import (
     _extract_indptr,
     get_and_verify_batch_sizes as _get_and_verify_batch_sizes,
     get_batch_size as _get_batch_size,
+    get_comp_size as _get_comp_size,
     get_dataset_type,
     is_columnar,
     is_sparse,
@@ -59,6 +61,157 @@ LICENSE_TEXT = (
     "SPDX-License-Identifier: MPL-2.0"
     "\n"
 )
+
+_VOLTAGE_SENSOR_TYPES = (ComponentType.sym_voltage_sensor, ComponentType.asym_voltage_sensor)
+_POWER_SENSOR_TYPES = (ComponentType.sym_power_sensor, ComponentType.asym_power_sensor)
+_CURRENT_SENSOR_TYPES = (ComponentType.sym_current_sensor, ComponentType.asym_current_sensor)
+_STATE_ESTIMATION_SENSOR_TYPES = _VOLTAGE_SENSOR_TYPES + _POWER_SENSOR_TYPES + _CURRENT_SENSOR_TYPES
+
+
+def _get_attribute(component_data: SingleComponentData, attribute: AttributeType) -> np.ndarray:
+    return np.asarray(component_data[attribute])
+
+
+def _expand_last_dimensions(values: np.ndarray, target: np.ndarray) -> np.ndarray:
+    while values.ndim < target.ndim:
+        values = values[..., np.newaxis]
+    return values
+
+
+def _draw_normal_samples(
+    rng: np.random.Generator, measurement: np.ndarray, sigma: np.ndarray, n_samples: int
+) -> np.ndarray:
+    sigma = _expand_last_dimensions(np.asarray(sigma), measurement)
+    return rng.normal(loc=measurement, scale=sigma, size=(n_samples, *measurement.shape))
+
+
+def _voltage_angle_sigma(
+    input_data: SingleDataset, sensor_data: SingleComponentData, sensor_type: ComponentType
+) -> np.ndarray:
+    node_data = input_data.get(ComponentType.node)
+    if node_data is None:
+        raise ValueError("Voltage sensor sampling requires node data with rated voltages.")
+
+    rated_voltage_by_id = dict(
+        zip(
+            _get_attribute(node_data, AttributeType.id).tolist(),
+            _get_attribute(node_data, AttributeType.u_rated).tolist(),
+            strict=True,
+        )
+    )
+    measured_objects = _get_attribute(sensor_data, AttributeType.measured_object)
+    try:
+        rated_voltages = np.asarray([rated_voltage_by_id[node_id] for node_id in measured_objects])
+    except KeyError as error:
+        raise ValueError(f"Voltage sensor refers to unknown node {error.args[0]}.") from error
+
+    voltage_scale = 1.0 if sensor_type == ComponentType.sym_voltage_sensor else 1.0 / np.sqrt(3.0)
+    return _get_attribute(sensor_data, AttributeType.u_sigma) / (rated_voltages * voltage_scale)
+
+
+def _power_component_sigmas(sensor_data: SingleComponentData) -> tuple[np.ndarray, np.ndarray]:
+    p_sigma = _get_attribute(sensor_data, AttributeType.p_sigma)
+    q_sigma = _get_attribute(sensor_data, AttributeType.q_sigma)
+    apparent_component_sigma = _get_attribute(sensor_data, AttributeType.power_sigma) / np.sqrt(2.0)
+
+    component_axes = tuple(range(1, p_sigma.ndim))
+    explicit_sigmas_are_valid = np.all(np.isfinite(p_sigma), axis=component_axes) & np.all(
+        np.isfinite(q_sigma), axis=component_axes
+    )
+    explicit_sigmas_are_valid = _expand_last_dimensions(explicit_sigmas_are_valid, p_sigma)
+    apparent_component_sigma = _expand_last_dimensions(apparent_component_sigma, p_sigma)
+    return (
+        np.where(explicit_sigmas_are_valid, p_sigma, apparent_component_sigma),
+        np.where(explicit_sigmas_are_valid, q_sigma, apparent_component_sigma),
+    )
+
+
+def create_state_estimation_monte_carlo_updates(
+    input_data: SingleDataset,
+    n_samples: int,
+    *,
+    seed: int | None = None,
+) -> BatchDataset:
+    """Create Gaussian sensor-update scenarios for Monte Carlo state estimation.
+
+    The returned dense batch can be passed directly to
+    :meth:`PowerGridModel.calculate_state_estimation` with either the iterative-linear or Newton-Raphson method. The
+    helper perturbs every symmetric and asymmetric voltage, power, and current sensor in ``input_data`` using the
+    public sensor fields:
+
+    - Voltage magnitude uses ``u_sigma``. If an angle measurement is present, its angular sigma is ``u_sigma`` divided
+      by the sensor's rated-voltage base; missing angle measurements remain missing.
+    - Active and reactive power use ``p_sigma`` and ``q_sigma`` when supplied. Otherwise, each independent component
+      uses ``power_sigma / sqrt(2)``.
+    - Current magnitude and angle use ``i_sigma`` and ``i_angle_sigma``.
+
+    All sampled channels are mutually independent. The function represents Gaussian errors in the public sensor
+    coordinates; it does not attempt to reproduce method-specific internal covariance approximations.
+
+    Args:
+        input_data: Valid state-estimation input dataset. Row-based and columnar component data are supported.
+        n_samples: Number of Monte Carlo scenarios. Must be positive.
+        seed: Optional seed for a local NumPy random-number generator.
+
+    Raises:
+        ValueError: If ``n_samples`` is not positive, no sensors are present, or a voltage sensor refers to an unknown
+            node.
+
+    Returns:
+        Dense batch update dataset containing noisy sensor measurements.
+    """
+    if not isinstance(n_samples, int) or isinstance(n_samples, bool) or n_samples < 1:
+        raise ValueError("n_samples must be a positive integer.")
+
+    input_data = _map_to_component_types(input_data)
+    rng = np.random.default_rng(seed)
+    updates: BatchDataset = {}
+
+    for sensor_type in _STATE_ESTIMATION_SENSOR_TYPES:
+        sensor_data = input_data.get(sensor_type)
+        if sensor_data is None or _get_comp_size(sensor_data) == 0:
+            continue
+
+        sensor_update = initialize_array(DatasetType.update, sensor_type, (n_samples, _get_comp_size(sensor_data)))
+
+        if sensor_type in _VOLTAGE_SENSOR_TYPES:
+            magnitude = _get_attribute(sensor_data, AttributeType.u_measured)
+            sensor_update[AttributeType.u_measured] = _draw_normal_samples(
+                rng, magnitude, _get_attribute(sensor_data, AttributeType.u_sigma), n_samples
+            )
+
+            angle = _get_attribute(sensor_data, AttributeType.u_angle_measured)
+            if np.any(np.isfinite(angle)):
+                sampled_angle = _draw_normal_samples(
+                    rng, angle, _voltage_angle_sigma(input_data, sensor_data, sensor_type), n_samples
+                )
+                sensor_update[AttributeType.u_angle_measured] = np.where(np.isfinite(angle), sampled_angle, np.nan)
+
+        elif sensor_type in _POWER_SENSOR_TYPES:
+            p_sigma, q_sigma = _power_component_sigmas(sensor_data)
+            p_measured = _get_attribute(sensor_data, AttributeType.p_measured)
+            q_measured = _get_attribute(sensor_data, AttributeType.q_measured)
+            sensor_update[AttributeType.p_measured] = _draw_normal_samples(rng, p_measured, p_sigma, n_samples)
+            sensor_update[AttributeType.q_measured] = _draw_normal_samples(rng, q_measured, q_sigma, n_samples)
+
+        else:
+            i_measured = _get_attribute(sensor_data, AttributeType.i_measured)
+            i_angle_measured = _get_attribute(sensor_data, AttributeType.i_angle_measured)
+            sensor_update[AttributeType.i_measured] = _draw_normal_samples(
+                rng, i_measured, _get_attribute(sensor_data, AttributeType.i_sigma), n_samples
+            )
+            sensor_update[AttributeType.i_angle_measured] = _draw_normal_samples(
+                rng,
+                i_angle_measured,
+                _get_attribute(sensor_data, AttributeType.i_angle_sigma),
+                n_samples,
+            )
+
+        updates[sensor_type] = sensor_update
+
+    if not updates:
+        raise ValueError("input_data contains no state-estimation sensors to sample.")
+    return updates
 
 
 def get_dataset_scenario(dataset: BatchDataset, scenario: int) -> SingleDataset:
