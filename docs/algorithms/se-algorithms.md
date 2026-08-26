@@ -279,6 +279,34 @@ This produces more correct outputs when the system is observable, but will preve
 exception, even if it is unobservable, therefore giving faulty results.
 ```
 
+### State Estimate Output Uncertainty
+
+Setting `calculate_uncertainty=True` for iterative-linear state estimation obtains the selected state-covariance blocks
+from the inverse of the final augmented WLS matrix. The calculation is conditional on the final measurement
+transformation and voltage reference: it is a covariance calculation for that fixed local linear model, not a
+linearization of the complete iterative procedure.
+
+The propagation adopts a proper (circular) effective complex voltage error, for which the pseudo-covariance is zero.
+Voltage magnitude and angle, branch-current magnitude, and branch active/reactive power standard deviations are then
+computed with a first-order delta approximation. Real marginals therefore include the proper-complex factor of $1/2$.
+Node active/reactive injection standard deviations additionally require covariance blocks over the node's closed
+electrical neighbourhood.
+
+Consequently, the reported sigmas are local analytical approximations rather than confidence bounds. In particular:
+
+- without a voltage-angle measurement, reported angles use slack phase A as their reference. Its angle sigma is zero,
+  and the other angle sigmas include their covariance with that reference;
+- the magnitude approximation for current is undefined at zero current, for which the current sigma is `NaN`;
+- a factorization requiring numerical LU pivot perturbation is rejected with `SparseMatrixError`, because the selected
+  inverse is not valid for the perturbed system;
+- an ideal `link` has no separately identifiable terminal-flow uncertainty, so its flow sigmas are `NaN`;
+- nodes joined by connected ideal links share a physical voltage, but their individual injections cannot be separated
+  by the covariance model, so their `p_sigma` and `q_sigma` are `NaN`.
+
+If uncertainty is not requested, all sigma fields remain `NaN` and the state estimate is calculated normally. See
+[Analytical output uncertainty](../user_manual/calculations.md#analytical-output-uncertainty) for the public output
+fields and units.
+
 ## Newton-Raphson state estimation
 
 Algorithm call: {py:class}`CalculationMethod.newton_raphson <power_grid_model.enum.CalculationMethod.newton_raphson>`
@@ -329,3 +357,65 @@ In observable systems this helps better outputting correct results.
 On the other hand with unobservable systems, exceptions raised from calculations due to faulty results will be
 prevented.
 ```
+
+### Newton-Raphson output uncertainty
+
+Setting `calculate_uncertainty=True` obtains a frozen Gauss-Newton covariance at the returned operating point. With the
+real polar state $\boldsymbol{x}=[\boldsymbol{\theta};\boldsymbol{v}]$ and normalized augmented matrix
+
+$$
+\overline{\boldsymbol{A}}=
+\begin{bmatrix}
+\overline{\boldsymbol{G}} & \boldsymbol{Q}^{\mathsf{T}} \\
+\boldsymbol{Q} & -\overline{\boldsymbol{\Sigma}}_{\mathrm{g}}
+\end{bmatrix},
+$$
+
+$\overline{\boldsymbol{G}}$ is the gain from measurements assembled directly into the normal equations,
+$\boldsymbol{Q}$ contains retained nodal-injection Jacobians, and
+$\overline{\boldsymbol{\Sigma}}_{\mathrm{g}}$ is their diagonal covariance. If a physical voltage angle is available,
+the raw state covariance is
+
+$$
+\boldsymbol{C}_{x,\mathrm{raw}} \approx
+\alpha\left(\overline{\boldsymbol{A}}^{-1}\right)_{xx},
+$$
+
+where $\alpha$ restores PGM's variance normalization. Exact retained injection constraints may have zero variance; the
+augmented matrix itself must remain nonsingular.
+
+Without a physical voltage angle, NR adds deterministic virtual-angle rows to define the iterate. Their gain belongs in
+$\overline{\boldsymbol{A}}$, but they have no measurement noise. Let $\boldsymbol{S}$ select those angle coordinates,
+$\boldsymbol{W}_{\mathrm{v}}$ contain their normalized weights,
+$\boldsymbol{Z}_{xx}=(\overline{\boldsymbol{A}}^{-1})_{xx}$, and
+$\boldsymbol{R}=\boldsymbol{Z}_{xx}\boldsymbol{S}^{\mathsf{T}}$. The implementation removes their artificial stochastic
+contribution with
+
+$$
+\boldsymbol{C}_{x,\mathrm{raw}} \approx
+\alpha\left(\boldsymbol{Z}_{xx}-
+\boldsymbol{R}\boldsymbol{W}_{\mathrm{v}}\boldsymbol{R}^{\mathsf{T}}\right).
+$$
+
+It then applies the reporting transformation
+$\boldsymbol{C}_{x,\mathrm{ref}}=\boldsymbol{\Gamma}\boldsymbol{C}_{x,\mathrm{raw}}
+\boldsymbol{\Gamma}^{\mathsf{T}}$, where $\boldsymbol{\Gamma}$ subtracts slack phase A from every voltage angle. The
+reported slack phase-A angle sigma is consequently zero. In an asymmetric calculation, the three virtual phase-angle
+rows also constrain two relative-phase directions; the slack projection removes only their common rotation.
+
+The iteration factors precede the final accepted voltage update. UQ therefore rebuilds and factorizes the augmented
+matrix at the returned state, caches the virtual-angle and slack-reference solves, and evaluates nodal-injection
+quadratic forms before the destructive selected-inverse sweep. A factorization requiring numerical pivot perturbation
+is rejected with `SparseMatrixError`.
+
+The asymmetric NR assembly used by this covariance also applies the inner phase transpose in
+$\boldsymbol{J}^{\mathsf{T}}\boldsymbol{W}$, left-normalizes local-frame current blocks by the terminal voltage
+magnitudes, and uses phase-local voltage division in the coupled shunt-power self derivative.
+
+Voltage, branch-current, and active/reactive-power sigmas use ordinary real Jacobian propagation
+$\boldsymbol{C}_y\approx\boldsymbol{J}_y\boldsymbol{C}_x\boldsymbol{J}_y^{\mathsf{T}}$. Unlike iterative-linear UQ,
+there is no proper-complex assumption and no factor of $1/2$. This is a local Gauss-Newton approximation, not the full
+nonlinear Hessian or the exact finite-noise covariance. It assumes independent processed measurement channels with
+diagonal covariance; correlated measurement errors are not supported. See
+[Analytical output uncertainty](../user_manual/calculations.md#analytical-output-uncertainty) for output fields and
+shared availability rules.
