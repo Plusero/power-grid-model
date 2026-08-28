@@ -1,0 +1,261 @@
+{
+  "accuracy Monte Carlo samples": {
+    "CIGRE MV": {
+      "attempted": 1000,
+      "converged": 1000
+    },
+    "CIGRE LV": {
+      "attempted": 1000,
+      "converged": 1000
+    },
+    "IEEE 33": {
+      "attempted": 1000,
+      "converged": 1000
+    },
+    "MV Oberrhein": {
+      "attempted": 1000,
+      "converged": 1000
+    },
+    "LV Schutterwald": {
+      "attempted": 1000,
+      "converged": 1000
+    }
+  },
+  "accuracy seed": 2026,
+  "accuracy baseline": "Monte Carlo UQ NRSE",
+  "accuracy metric": "median absolute percentage error over the common finite-output intersection of all reported methods with nonzero baseline sigma",
+  "absolute sigma metric": "median output standard deviation over the same common finite-output intersection as the accuracy table, grouped by node or branch terminal and terminal-node rated voltage",
+  "absolute sigma units": {
+    "voltage magnitude": "V",
+    "current magnitude": "A",
+    "active power": "kW",
+    "reactive power": "kvar"
+  },
+  "one-sigma interval scores": {
+    "truth": "noise-free Newton-Raphson power-flow output",
+    "centers": {
+      "Analytical UQ ILSE": "scenario-specific ILSE estimate",
+      "Monte Carlo UQ ILSE": "scenario-specific ILSE estimate",
+      "Analytical UQ NRSE": "scenario-specific NRSE estimate",
+      "Monte Carlo UQ NRSE": "scenario-specific NRSE estimate",
+      "Gain inverse NumPy": "scenario-specific NRSE estimate"
+    },
+    "half-widths": {
+      "Analytical UQ ILSE": "scenario-specific analytical sigma",
+      "Monte Carlo UQ ILSE": "independent 1,000-sample ILSE sigma",
+      "Analytical UQ NRSE": "scenario-specific analytical sigma",
+      "Monte Carlo UQ NRSE": "independent 1,000-sample NRSE sigma",
+      "Gain inverse NumPy": "clean reference-point gain-inverse sigma"
+    },
+    "lower endpoint": "center - half-width",
+    "upper endpoint": "center + half-width",
+    "evaluation samples": 1000,
+    "evaluation seed": 2026,
+    "Monte Carlo sigma training samples": 1000,
+    "Monte Carlo sigma training seed": 2027,
+    "sample counts": {
+      "CIGRE MV": {
+        "attempted": 1000,
+        "common converged": 1000,
+        "method converged": {
+          "Analytical UQ ILSE": 1000,
+          "Monte Carlo UQ ILSE": 1000,
+          "Analytical UQ NRSE": 1000,
+          "Monte Carlo UQ NRSE": 1000,
+          "Gain inverse NumPy": 1000
+        },
+        "sigma calibration samples": {
+          "Analytical UQ ILSE": 0,
+          "Monte Carlo UQ ILSE": 1000,
+          "Analytical UQ NRSE": 0,
+          "Monte Carlo UQ NRSE": 1000,
+          "Gain inverse NumPy": 1
+        }
+      },
+      "CIGRE LV": {
+        "attempted": 1000,
+        "common converged": 1000,
+        "method converged": {
+          "Analytical UQ ILSE": 1000,
+          "Monte Carlo UQ ILSE": 1000,
+          "Analytical UQ NRSE": 1000,
+          "Monte Carlo UQ NRSE": 1000,
+          "Gain inverse NumPy": 1000
+        },
+        "sigma calibration samples": {
+          "Analytical UQ ILSE": 0,
+          "Monte Carlo UQ ILSE": 1000,
+          "Analytical UQ NRSE": 0,
+          "Monte Carlo UQ NRSE": 1000,
+          "Gain inverse NumPy": 1
+        }
+      },
+      "IEEE 33": {
+        "attempted": 1000,
+        "common converged": 1000,
+        "method converged": {
+          "Analytical UQ ILSE": 1000,
+          "Monte Carlo UQ ILSE": 1000,
+          "Analytical UQ NRSE": 1000,
+          "Monte Carlo UQ NRSE": 1000,
+          "Gain inverse NumPy": 1000
+        },
+        "sigma calibration samples": {
+          "Analytical UQ ILSE": 0,
+          "Monte Carlo UQ ILSE": 1000,
+          "Analytical UQ NRSE": 0,
+          "Monte Carlo UQ NRSE": 1000,
+          "Gain inverse NumPy": 1
+        }
+      },
+      "MV Oberrhein": {
+        "attempted": 1000,
+        "common converged": 1000,
+        "method converged": {
+          "Analytical UQ ILSE": 1000,
+          "Monte Carlo UQ ILSE": 1000,
+          "Analytical UQ NRSE": 1000,
+          "Monte Carlo UQ NRSE": 1000,
+          "Gain inverse NumPy": 1000
+        },
+        "sigma calibration samples": {
+          "Analytical UQ ILSE": 0,
+          "Monte Carlo UQ ILSE": 1000,
+          "Analytical UQ NRSE": 0,
+          "Monte Carlo UQ NRSE": 1000,
+          "Gain inverse NumPy": 1
+        }
+      },
+      "LV Schutterwald": {
+        "attempted": 1000,
+        "common converged": 1000,
+        "method converged": {
+          "Analytical UQ ILSE": 1000,
+          "Monte Carlo UQ ILSE": 1000,
+          "Analytical UQ NRSE": 1000,
+          "Monte Carlo UQ NRSE": 1000,
+          "Gain inverse NumPy": 1000
+        },
+        "sigma calibration samples": {
+          "Analytical UQ ILSE": 0,
+          "Monte Carlo UQ ILSE": 1000,
+          "Analytical UQ NRSE": 0,
+          "Monte Carlo UQ NRSE": 1000,
+          "Gain inverse NumPy": 1
+        }
+      }
+    },
+    "nominal coverage": 0.6826894921370859,
+    "alpha": 0.31731050786291415,
+    "aggregation": "mean over the output specifications exported for the accuracy study, restricted to the common finite five-method intersection with nonzero empirical variance and common converged scenarios; native scores are grouped by node or branch terminal, terminal-node rated voltage, and output quantity",
+    "excluded outputs": "deterministic outputs with zero empirical variance are excluded after verifying 100 percent repeated-sampling coverage; outputs not exported by the accuracy notebooks are outside the reported population",
+    "standardization": "group-mean MWS and MWIS divided by the group-mean empirical standard deviation of the matched independent truth-centered 1,000-sample training batch",
+    "MWS and MWIS units": {
+      "voltage magnitude": "V",
+      "current magnitude": "A",
+      "active power": "kW",
+      "reactive power": "kvar"
+    }
+  },
+  "network statistics": {
+    "CIGRE MV": {
+      "buses": 15,
+      "zero-injection buses": 1
+    },
+    "CIGRE LV": {
+      "buses": 41,
+      "zero-injection buses": 25
+    },
+    "IEEE 33": {
+      "buses": 33,
+      "zero-injection buses": 0
+    },
+    "MV Oberrhein": {
+      "buses": 179,
+      "zero-injection buses": 18
+    },
+    "LV Schutterwald": {
+      "buses": 2940,
+      "zero-injection buses": 1420
+    }
+  },
+  "runtime": {
+    "timestamp timezone": "local system time",
+    "platform": "Linux-6.8.0-137-generic-x86_64-with-glibc2.39",
+    "CPU": "12th Gen Intel(R) Core(TM) i5-12400",
+    "logical CPUs": 12,
+    "Python": "3.14.3",
+    "NumPy": "2.5.2",
+    "SciPy": "1.18.0",
+    "PGM native library": "build/bin/libpower_grid_model_c.so.1.13",
+    "bus counts": [
+      500,
+      1000,
+      2000,
+      5000,
+      10000,
+      20000,
+      50000,
+      100000,
+      200000,
+      500000,
+      1000000
+    ],
+    "Monte Carlo samples": 10,
+    "repeats": 3,
+    "BLAS thread environment": {
+      "OPENBLAS_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1"
+    }
+  },
+  "artifact storage": {
+    "root": "docs/examples/tsg_wls_uq",
+    "relocated without recomputation": true,
+    "note": "The retained numerical results were moved from TSG-WLS-UQ to the PGM repository without rerunning the experiments; source provenance below records the producing code before relocation. Current migrated-script and retained-artifact hashes are recorded separately in migration_manifest.json."
+  },
+  "source provenance": {
+    "repositories": {
+      "power-grid-model": {
+        "commit": "7577437c96502ac5c6722f134fd635db8f52c041",
+        "dirty": true,
+        "status entries": 12
+      },
+      "TSG-WLS-UQ": {
+        "commit": "ffc95cad7c6b8c864f0952e4be1a33a188327be5",
+        "dirty": true,
+        "status entries": 27
+      }
+    },
+    "python": "3.14.3 (main, Feb  3 2026, 22:52:18) [Clang 21.1.4 ]",
+    "packages": {
+      "power-grid-model": "1.13",
+      "numpy": "2.5.2",
+      "pandas": "2.3.3",
+      "scipy": "1.18.0",
+      "matplotlib": "3.11.1",
+      "pandapower": "3.5.4",
+      "scienceplots": "2.2.2"
+    },
+    "source file sha256": {
+      "power-grid-model/docs/examples/CIGRE MV State Estimation UQ Example.ipynb": "78366faf231277f93b2b1b0838dffdfa56b7b04203ac0d65cd7f20d7e228a5eb",
+      "power-grid-model/docs/examples/CIGRE LV State Estimation UQ Example.ipynb": "25ffcbe9c1effdd8321497a9ccd0d52edd8c3e7fd6c25c300684adcff04c4df3",
+      "power-grid-model/docs/examples/IEEE33 State Estimation UQ Example.ipynb": "1f25a5b2c55148b3183278a049ce7debf47c8bd0ed49e69e45184dd1ede5f816",
+      "power-grid-model/docs/examples/MV Oberrhein State Estimation UQ Example.ipynb": "798a7b929e459f0d79f62c016b24bcb33d980a3713b5f6136f35d1164bbe064b",
+      "power-grid-model/docs/examples/LV Schutterwald State Estimation UQ Example.ipynb": "3fd02276152658dbe8e88230dfa76ff0eaec43558f96e39627125e05ec07af50",
+      "power-grid-model/docs/examples/Synthetic MV Ternary Tree UQ Scaling Example.ipynb": "1c2dc5e45b3afa1349f78079a249d80f3682db3a1390ee0d1f8a3e858fde8932",
+      "power-grid-model/docs/examples/gain_matrix.py": "e67ae97087da0ee71936d44252edc0c3cf44d7ae89c24bc86dac98335c3502c6",
+      "power-grid-model/docs/examples/gain_covariance.py": "8b3e35079f56f3fd989b0d93fad4813477b2080429fa5a7f8ef7191248c088f6",
+      "power-grid-model/docs/examples/network_summary.py": "cac45ec86d4ba0e1cf3396bbde5373663191db662ef30c3c87186c0211a01757",
+      "power-grid-model/docs/examples/pandapower_mc_uq.py": "66705a6c4a55871455e826aa84b74aaadee4e8a392d92bfb46c16b81dd439b9d",
+      "power-grid-model/docs/examples/pandapower_mc_uq.md": "3e907f67ba44c4983df6e30a2010efe8900a4e739dda3c20847c0f2aa8b2f035",
+      "power-grid-model/docs/examples/data/cigre_lv_pgm.json": "f75e5afc065d6fd5cf07b4bad450c18e484d847c45c98f241dcc2e98a70b2d6f",
+      "power-grid-model/docs/examples/data/mv_oberrhein_pgm.json": "3324db08986808f2eefdf0aadbf1958ad543770e3a2eb25548a5a82c8a1e11e3",
+      "power-grid-model/docs/examples/data/lv_schutterwald_pgm.json": "6a554693fe316cd3805bd9b9ff1e044bcb9649a27f236f07421a7f8f78bd4c27",
+      "TSG-WLS-UQ/experiments/run_accuracy_notebooks.py": "f3e8e4a1eea161c8b3e2974ed3e1ec5a6f2599b5ffba0d8309111335b273ad38",
+      "TSG-WLS-UQ/experiments/run_interval_coverage.py": "b6c9c98395831b2a5c69bee73bc9015be2c953d9a3396868cfb31cc690999777",
+      "TSG-WLS-UQ/experiments/run_runtime_benchmark.py": "02b7b33d4f9eaac430d84b187fae36579553b99fbafe6c4b00a0d93998092fe0",
+      "TSG-WLS-UQ/experiments/build_paper_artifacts.py": "b9e5ecd11b8a0984c2775d146855c8e546c0a6bafe0632608aaa8729a9936041"
+    }
+  }
+}

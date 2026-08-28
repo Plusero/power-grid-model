@@ -1,0 +1,27 @@
+{
+  "migration date": "2026-08-28",
+  "destination": "power-grid-model/docs/examples/tsg_wls_uq",
+  "recomputed": false,
+  "provenance statement": "The retained result files were generated before the workflow moved from TSG-WLS-UQ/experiments. The historical source paths and hashes in experiment_metadata.json remain the producing provenance. The hashes below identify the current PGM-owned workflow after path discovery, active-interpreter, formatting, and lint-only migration edits; they are not presented as the byte-identical producing sources.",
+  "current workflow source sha256": {
+    "docs/examples/tsg_wls_uq/build_paper_artifacts.py": "fa49477f5770ba3b4afe945c0d8efb80d30b5c56c61aabdac578fcfb03963371",
+    "docs/examples/tsg_wls_uq/run_accuracy_notebooks.py": "93fe23871304ec9a32d22634c6cfe46adbd473b39cec56d3c59a897f1cf2d524",
+    "docs/examples/tsg_wls_uq/run_interval_coverage.py": "8ea4d7ae26c41b823222b71071b4edac264371673e6add9eeb251d234ba8ced2",
+    "docs/examples/tsg_wls_uq/run_runtime_benchmark.py": "a7e58d19e872b658ee448da899c88769a9431e1a9c2c5c2416d72f1be3a5bd54"
+  },
+  "retained artifact sha256": {
+    "figures/cigre_lv_power_sigmas.pdf": "100141a43646a0cb3379e05a43529debfe0d0d09a83a567d1f45009c50194b83",
+    "figures/gain_inverse_accuracy_vs_zi.pdf": "6104f85cedf0d2b37f2756baba65de8a6c57818753f2082e95ec262d249d6750",
+    "figures/ternary_tree_runtime.pdf": "f76f05c5a6c67c7f1e7f99a0f7a147664c7d6dad720814ab54e7110c5eb6b072",
+    "results/absolute_sigma_medians_by_voltage_level.csv": "e665a3a849e1daa76448de0fa3216e4f1d7ae1da7083b879f242758b7ba93cc8",
+    "results/accuracy_median_ape.csv": "f39f985fa289e82f2ed7b2d9b3c3b332af32ca7994d03ce709df1fa2dc079e64",
+    "results/experiment_metadata.json": "2cfd1df6aa5ebb251124fa41ed42f46d54dc2242b1e49f3bc3bd2cb8a1f9792b",
+    "results/one_sigma_interval_rows.tex": "d7d424f2567e44e36f6b2b51994c41dd09d44bf059277b1c42b5449feb68751e",
+    "results/one_sigma_interval_scores_by_voltage_level.csv": "5c4b5513adbaedf5c40aa18f77e820576856b03e1de7685b0b3b5fd0efbca497",
+    "results/one_sigma_interval_scores_standardized.csv": "a688045a79c80295c15e1ec0b12af46ef740c94ea157727eef275b23ca65db94",
+    "results/ternary_tree_runtime.csv": "3f57851c1ad8029a4ad878e44eccc35d2c32c3dcb26ec535e0a39c817faaf489",
+    "results/timing_power_law_rows.tex": "08cfc247c4500e9dec7b8e414c1dafeab602c8e943c2fc64140798c67ff20c20",
+    "results/timing_power_laws.csv": "d21f9860c4aad82d5ed761f597725024473a903308dd43e47de43ebff591faca"
+  },
+  "refresh rule": "Run the full workflow documented in ../README.md to regenerate the results, figures, and experiment_metadata.json from the current PGM-owned scripts. Replace or remove this migration manifest only after that full rerun."
+}

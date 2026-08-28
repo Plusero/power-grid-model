@@ -1,0 +1,73 @@
+buses,method,median time [s],minimum time [s],maximum time [s],repeats,Monte Carlo samples,converged samples,timing scope
+500,Deterministic ILSE,0.000795594067312777,0.00079217494931072,0.0008404459804296494,3,,,fresh model plus complete state-estimation call
+500,Deterministic NRSE,0.0010241649579256773,0.000988472020253539,0.001028441940434277,3,,,fresh model plus complete state-estimation call
+500,Analytical UQ ILSE,0.0014133970253169537,0.0014122750144451857,0.0014269159873947501,3,,,fresh model plus complete state-estimation call
+500,Analytical UQ NRSE,0.0019339369609951973,0.0019190410384908319,0.0019576819613575935,3,,,fresh model plus complete state-estimation call
+500,Monte Carlo ILSE,0.004142642021179199,0.004128621076233685,0.004178809933364391,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+500,Monte Carlo NRSE,0.0056421720655635,0.005484143039211631,0.005684196949005127,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+500,Gain inverse NumPy,0.11521004396490753,0.11410967796109617,0.12338972301222384,3,,,"NRSE, dense gain construction/inversion, and output covariance propagation"
+500,Gain inverse SciPy,0.0901185959810391,0.0896725800121203,0.09493776701856405,3,,,"NRSE, dense gain construction/inversion, and output covariance propagation"
+1000,Deterministic ILSE,0.001380249042995274,0.0013581740204244852,0.001634686952456832,3,,,fresh model plus complete state-estimation call
+1000,Deterministic NRSE,0.0016805469058454037,0.0016694270307198167,0.0016975689213722944,3,,,fresh model plus complete state-estimation call
+1000,Analytical UQ ILSE,0.0023774150758981705,0.0023735479917377234,0.002385977073572576,3,,,fresh model plus complete state-estimation call
+1000,Analytical UQ NRSE,0.0033401260152459145,0.003322234028019011,0.0033505409955978394,3,,,fresh model plus complete state-estimation call
+1000,Monte Carlo ILSE,0.007271157926879823,0.006961325998418033,0.007400640053674579,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+1000,Monte Carlo NRSE,0.010068838018923998,0.01005844702012837,0.010160738020204008,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+1000,Gain inverse NumPy,0.5757443300681189,0.5726324790157378,0.5864491059910506,3,,,"NRSE, dense gain construction/inversion, and output covariance propagation"
+1000,Gain inverse SciPy,0.37942233099602163,0.3754590229364112,0.38270567799918354,3,,,"NRSE, dense gain construction/inversion, and output covariance propagation"
+2000,Deterministic ILSE,0.002294135047122836,0.0022887899540364742,0.0023253459949046373,3,,,fresh model plus complete state-estimation call
+2000,Deterministic NRSE,0.0029473210452124476,0.0029366480885073543,0.002998742973431945,3,,,fresh model plus complete state-estimation call
+2000,Analytical UQ ILSE,0.004113394999876618,0.004112183931283653,0.004158350988291204,3,,,fresh model plus complete state-estimation call
+2000,Analytical UQ NRSE,0.006056290934793651,0.006043686997145414,0.006148863001726568,3,,,fresh model plus complete state-estimation call
+2000,Monte Carlo ILSE,0.013420811970718205,0.013360662036575377,0.01356118603143841,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+2000,Monte Carlo NRSE,0.019939187914133072,0.01989335601683706,0.02017430996056646,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+2000,Gain inverse NumPy,3.528440756024793,3.519260694971308,3.54520784097258,3,,,"NRSE, dense gain construction/inversion, and output covariance propagation"
+2000,Gain inverse SciPy,1.9403693940257654,1.938168584019877,1.9419414889998734,3,,,"NRSE, dense gain construction/inversion, and output covariance propagation"
+5000,Deterministic ILSE,0.005559703917242587,0.005545045016333461,0.005624048062600195,3,,,fresh model plus complete state-estimation call
+5000,Deterministic NRSE,0.007118609035387635,0.007108116988092661,0.00712289591319859,3,,,fresh model plus complete state-estimation call
+5000,Analytical UQ ILSE,0.010393208009190857,0.010380945983342826,0.010720296995714307,3,,,fresh model plus complete state-estimation call
+5000,Analytical UQ NRSE,0.01566282892599702,0.015369496075436473,0.015879197977483273,3,,,fresh model plus complete state-estimation call
+5000,Monte Carlo ILSE,0.03652848699130118,0.03621567296795547,0.0368413960095495,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+5000,Monte Carlo NRSE,0.05083621293306351,0.050754375057294965,0.05129235505592078,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+10000,Deterministic ILSE,0.012021800968796015,0.011998631991446018,0.012121670064516366,3,,,fresh model plus complete state-estimation call
+10000,Deterministic NRSE,0.014548460952937603,0.014547755941748619,0.014934243983589113,3,,,fresh model plus complete state-estimation call
+10000,Analytical UQ ILSE,0.021502305986359715,0.021366624045185745,0.021901950938627124,3,,,fresh model plus complete state-estimation call
+10000,Analytical UQ NRSE,0.030898933997377753,0.030835233977995813,0.03104316594544798,3,,,fresh model plus complete state-estimation call
+10000,Monte Carlo ILSE,0.07984692591708153,0.07952803408261389,0.08038790291175246,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+10000,Monte Carlo NRSE,0.10514040989801288,0.1044610480312258,0.10552477894816548,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+20000,Deterministic ILSE,0.027181150042451918,0.027051213895902038,0.02731359808240086,3,,,fresh model plus complete state-estimation call
+20000,Deterministic NRSE,0.02908251399639994,0.029067999916151166,0.029479481978341937,3,,,fresh model plus complete state-estimation call
+20000,Analytical UQ ILSE,0.04657664697151631,0.04645915108267218,0.0500120350625366,3,,,fresh model plus complete state-estimation call
+20000,Analytical UQ NRSE,0.06428704294376075,0.0642423799727112,0.064694146043621,3,,,fresh model plus complete state-estimation call
+20000,Monte Carlo ILSE,0.19532914098817855,0.19361224002204835,0.19693149195518345,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+20000,Monte Carlo NRSE,0.21617620310280472,0.21523542201612145,0.22525243798736483,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+50000,Deterministic ILSE,0.07934850198216736,0.07834177697077394,0.08051668806001544,3,,,fresh model plus complete state-estimation call
+50000,Deterministic NRSE,0.07724049710668623,0.07692069094628096,0.07752474898006767,3,,,fresh model plus complete state-estimation call
+50000,Analytical UQ ILSE,0.13069093495141715,0.130481002968736,0.13173021096736193,3,,,fresh model plus complete state-estimation call
+50000,Analytical UQ NRSE,0.1780213889433071,0.17768390395212919,0.1782881460385397,3,,,fresh model plus complete state-estimation call
+50000,Monte Carlo ILSE,0.6249169789953157,0.6104950470617041,0.6364777630660683,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+50000,Monte Carlo NRSE,0.6141944269184023,0.6060920659219846,0.6328139259712771,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+100000,Deterministic ILSE,0.18219202500768006,0.1809017590712756,0.1901472939644009,3,,,fresh model plus complete state-estimation call
+100000,Deterministic NRSE,0.2008767300285399,0.19626792997587472,0.20351946400478482,3,,,fresh model plus complete state-estimation call
+100000,Analytical UQ ILSE,0.2975351889617741,0.2973501730011776,0.30558555491734296,3,,,fresh model plus complete state-estimation call
+100000,Analytical UQ NRSE,0.40149640501476824,0.4011507439427078,0.4051342539023608,3,,,fresh model plus complete state-estimation call
+100000,Monte Carlo ILSE,1.4492967689875513,1.4385975709883496,1.4517990238964558,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+100000,Monte Carlo NRSE,1.5290365481050685,1.528321321005933,1.5308534459909424,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+200000,Deterministic ILSE,0.4139849920757115,0.40252700995188206,0.4159432470332831,3,,,fresh model plus complete state-estimation call
+200000,Deterministic NRSE,0.41500076092779636,0.4036010390846059,0.41682609589770436,3,,,fresh model plus complete state-estimation call
+200000,Analytical UQ ILSE,0.6581611699657515,0.6516764119733125,0.658340753056109,3,,,fresh model plus complete state-estimation call
+200000,Analytical UQ NRSE,0.8133015780476853,0.8110452530672774,0.8221273559611291,3,,,fresh model plus complete state-estimation call
+200000,Monte Carlo ILSE,3.2756054820492864,3.263139581074938,3.3151667260099202,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+200000,Monte Carlo NRSE,3.198265750077553,3.198140316992067,3.3329451410099864,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+500000,Deterministic ILSE,1.1687660140451044,1.1570272000972182,1.1706348559819162,3,,,fresh model plus complete state-estimation call
+500000,Deterministic NRSE,1.0238907330203801,1.0187727569136769,1.0289866719394922,3,,,fresh model plus complete state-estimation call
+500000,Analytical UQ ILSE,1.7309058560058475,1.7306878169765696,1.7506267139688134,3,,,fresh model plus complete state-estimation call
+500000,Analytical UQ NRSE,2.0714509609388188,2.0677940299501643,2.072493282961659,3,,,fresh model plus complete state-estimation call
+500000,Monte Carlo ILSE,9.391570472973399,9.3563764259452,9.393309465027414,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+500000,Monte Carlo NRSE,7.997258665971458,7.947191749000922,8.095764335012063,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+1000000,Deterministic ILSE,2.4934076060308143,2.4416946199489757,2.5259140379494056,3,,,fresh model plus complete state-estimation call
+1000000,Deterministic NRSE,2.4938425560249016,2.4787790620466694,2.5736448349198326,3,,,fresh model plus complete state-estimation call
+1000000,Analytical UQ ILSE,3.5582574190339074,3.5359418130246922,3.622511338093318,3,,,fresh model plus complete state-estimation call
+1000000,Analytical UQ NRSE,4.449203556054272,4.433844935963862,4.451518211979419,3,,,fresh model plus complete state-estimation call
+1000000,Monte Carlo ILSE,19.99538319709245,19.814408436999656,20.541504850960337,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded
+1000000,Monte Carlo NRSE,20.488574256072752,20.45211301604286,20.743880392983556,3,10,10,fresh model plus 10-scenario batch state-estimation call; sample generation excluded

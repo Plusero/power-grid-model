@@ -16,7 +16,8 @@ When the benchmark is available from `pandapower.networks`, the notebook creates
 `run_pandapower_monte_carlo()`. The helper deep-copies it, so the imported object is not mutated. If no native network
 is supplied, the helper falls back to constructing a pandapower network from PGM components.
 
-The native-network path is used for CIGRE MV, IEEE33, MV Oberrhein, and LV Schutterwald. The meshed CIGRE case
+The native-network path is used for CIGRE LV, CIGRE MV, IEEE33, MV Oberrhein, and LV Schutterwald. CIGRE LV first
+fuses the three closed ideal bus-bus switches used by the original PGM conversion. The meshed CIGRE MV case
 additionally closes the native network's line switches.
 
 ## Alignment and validation
