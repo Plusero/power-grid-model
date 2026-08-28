@@ -435,6 +435,10 @@ target/
 # Jupyter Notebook
 .ipynb_checkpoints
 
+# Large, reproducible raw outputs from the example notebooks and UQ benchmarks.
+# Compact paper artifacts remain under docs/examples/tsg_wls_uq/.
+/docs/examples/output/
+
 # IPython
 profile_default/
 ipython_config.py

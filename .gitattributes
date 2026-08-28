@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: MPL-2.0
 
 * text
- 
+
+*.pdf binary
 *.ipynb text eol=lf
 *.py text eol=lf
 *.pyi text eol=lf
