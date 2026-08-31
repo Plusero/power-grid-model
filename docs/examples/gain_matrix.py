@@ -600,13 +600,14 @@ def _to_csr(rows: list[dict[int, float]], column_count: int) -> CsrMatrix:
     )
 
 
-def build_measurement_model(  # noqa: PLR0912, PLR0915
+def build_measurement_model(  # noqa: PLR0912, PLR0913, PLR0915
     input_data: Mapping[Any, Any],
     *,
     system_frequency: float = 50.0,
     error_tolerance: float = 1.0e-10,
     max_iterations: int = 100,
     state_estimation_result: Mapping[Any, Any] | None = None,
+    retain_all_angle_columns: bool = False,
 ) -> MeasurementModel:
     """Build analytical ``H`` and diagonal ``W`` for the example's symmetric NRSE.
 
@@ -619,6 +620,9 @@ def build_measurement_model(  # noqa: PLR0912, PLR0915
 
     PGM's exact zero-injection constraints and any unmeasured branch equations
     are not included in this conventional measurement-only gain matrix.
+    ``retain_all_angle_columns`` leaves rotationally unobservable angle columns
+    in place so callers can add further measurement rows before choosing their
+    reference angles.
     """
     _validate_supported_input(input_data)
     nodes = _component(input_data, ComponentType.node)
@@ -894,11 +898,15 @@ def build_measurement_model(  # noqa: PLR0912, PLR0915
                 anchored_angle_nodes.update(measured_angle_nodes)
 
     full_state_vector = np.concatenate((voltage_angles, voltage_magnitudes))
-    fixed_reference_indices = _select_fixed_angle_references(
-        node_ids,
-        angle_neighbours,
-        anchored_angle_nodes,
-        _active_source_node_indices(input_data, node_index_by_id),
+    fixed_reference_indices = (
+        ()
+        if retain_all_angle_columns
+        else _select_fixed_angle_references(
+            node_ids,
+            angle_neighbours,
+            anchored_angle_nodes,
+            _active_source_node_indices(input_data, node_index_by_id),
+        )
     )
     fixed_angle_reference_node_ids = tuple(int(node_ids[index]) for index in fixed_reference_indices)
     retained_columns = [column for column in range(full_state_vector.size) if column not in fixed_reference_indices]

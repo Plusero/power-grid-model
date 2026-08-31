@@ -23,7 +23,7 @@ from power_grid_model import (
 )
 
 sys.path.insert(0, str(Path(__file__).parents[2] / "docs" / "examples"))
-from gain_matrix import CsrMatrix, _line_terminal_admittances, build_gain_matrix
+from gain_matrix import CsrMatrix, _line_terminal_admittances, build_gain_matrix, build_measurement_model
 
 
 def _state_estimation_input() -> dict:
@@ -196,6 +196,21 @@ def test_analytical_measurement_matrix_matches_central_difference() -> None:
         minus[column] -= step
         numerical[:, column] = (_measurement_values(plus) - _measurement_values(minus)) / (2.0 * step)
     np.testing.assert_allclose(analytical, numerical, rtol=2.0e-6, atol=2.0e-6)
+
+
+def test_measurement_model_can_retain_angle_columns_for_later_rows() -> None:
+    """Callers adding measurements later can defer angle-reference selection."""
+    input_data = _state_estimation_input()
+    input_data[CT.sym_voltage_sensor][AT.u_angle_measured] = np.nan
+
+    reduced = build_gain_matrix(input_data).measurement_model
+    full = build_measurement_model(input_data, retain_all_angle_columns=True)
+
+    full_state_size = 2 * input_data[CT.node].size
+    assert reduced.measurement_matrix.shape[1] == full_state_size - 1
+    assert reduced.fixed_angle_reference_node_ids == (0,)
+    assert full.measurement_matrix.shape[1] == full_state_size
+    assert full.fixed_angle_reference_node_ids == ()
 
 
 def test_line_shunt_jacobian_matches_central_difference() -> None:
