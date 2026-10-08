@@ -2,7 +2,7 @@
   "migration date": "2026-08-28",
   "destination": "power-grid-model/docs/examples/tsg_wls_uq",
   "recomputed": false,
-  "provenance statement": "The retained result files were generated before the workflow moved from TSG-WLS-UQ/experiments. The historical source paths and hashes in experiment_metadata.json remain the producing provenance. The hashes below identify the current PGM-owned workflow after path discovery, active-interpreter, formatting, and lint-only migration edits; they are not presented as the byte-identical producing sources.",
+  "provenance statement": "The retained numerical experiment files were generated before the workflow moved from TSG-WLS-UQ/experiments. The historical source paths and hashes in experiment_metadata.json remain the producing provenance. The hashes below identify the current PGM-owned workflow after path discovery, active-interpreter, formatting, and lint-only migration edits; they are not presented as the byte-identical producing sources. The separately listed IEEE33 reduced sparsity figure was generated from the local matrix archive, which is excluded from Git along with generated PDF and PNG files.",
   "current workflow source sha256": {
     "docs/examples/tsg_wls_uq/build_paper_artifacts.py": "fa49477f5770ba3b4afe945c0d8efb80d30b5c56c61aabdac578fcfb03963371",
     "docs/examples/tsg_wls_uq/run_accuracy_notebooks.py": "93fe23871304ec9a32d22634c6cfe46adbd473b39cec56d3c59a897f1cf2d524",
@@ -19,6 +19,18 @@
     "results/ternary_tree_runtime.csv": "3f57851c1ad8029a4ad878e44eccc35d2c32c3dcb26ec535e0a39c817faaf489",
     "results/timing_power_law_rows.tex": "08cfc247c4500e9dec7b8e414c1dafeab602c8e943c2fc64140798c67ff20c20",
     "results/timing_power_laws.csv": "d21f9860c4aad82d5ed761f597725024473a903308dd43e47de43ebff591faca"
+  },
+  "current reduced sparsity figure": {
+    "source sha256": {
+      "docs/examples/tsg_wls_uq/build_augmented_sparsity_figure.py": "07f412d47e847c4e5cd85d3fccafeb23ade1b3354c91aa06c2cdc349dea47926"
+    },
+    "input sha256": {
+      "results/ieee33_wls_uq_matrices.npz": "995724634a39bfe6db79c01d4fb3b39c66d73eaf800f447aa58eb522793f2f0b"
+    },
+    "artifact sha256": {
+      "figures/ieee33_augmented_matrix_sparsity.pdf": "3b34c0a493f51374a6dd1f62effc7925443c2d8379e2a8c1e328aedffc0d2240",
+      "figures/ieee33_augmented_matrix_sparsity.png": "82e1c2feea9487c5469d74f9f5c89d6d10c3644d6892e947966464f90d098787"
+    }
   },
   "refresh rule": "Run the full workflow documented in ../README.md to regenerate the results, figures, and experiment_metadata.json from the current PGM-owned scripts. Replace or remove this migration manifest only after that full rerun.",
   "historical generated artifact sha256": {

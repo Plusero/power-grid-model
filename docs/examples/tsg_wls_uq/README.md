@@ -40,6 +40,20 @@ then regenerates
 `docs/examples/tsg_wls_uq/results/timing_power_laws.csv`. Synchronize the
 paper-facing copies as shown below before building the manuscript.
 
+## Rebuild the sparsity figures
+
+Generate the matrix archive before rendering the reduced manuscript figure:
+
+```sh
+MPLCONFIGDIR=/tmp/tsg-wls-uq-mplconfig \
+    .venv/bin/python docs/examples/tsg_wls_uq/build_matrix_sparsity.py --case ieee33
+MPLCONFIGDIR=/tmp/tsg-wls-uq-mplconfig \
+    .venv/bin/python docs/examples/tsg_wls_uq/build_augmented_sparsity_figure.py
+```
+
+The remaining paper figures require the raw accuracy and runtime outputs;
+regenerate those with the full workflow below if they are unavailable locally.
+
 ## Reproduce all experiments
 
 The full workflow reruns the notebook-derived accuracy, interval, and runtime
@@ -53,6 +67,8 @@ MPLCONFIGDIR=/tmp/tsg-wls-uq-mplconfig \
     .venv/bin/python docs/examples/tsg_wls_uq/build_paper_artifacts.py
 MPLCONFIGDIR=/tmp/tsg-wls-uq-mplconfig \
     .venv/bin/python docs/examples/tsg_wls_uq/build_matrix_sparsity.py --case ieee33
+MPLCONFIGDIR=/tmp/tsg-wls-uq-mplconfig \
+    .venv/bin/python docs/examples/tsg_wls_uq/build_augmented_sparsity_figure.py
 ```
 
 The matrix builder is case-driven rather than IEEE33-specific. Its built-in
@@ -81,6 +97,11 @@ unsupported components or terminals fail explicitly. The legacy
 `build_ieee33_sparsity.py` remains a compatibility wrapper for the default
 case.
 
+`build_augmented_sparsity_figure.py` reads the IEEE33 matrix archive produced
+by the general builder and creates the reduced three-panel figure used in the
+manuscript. The original eight-panel PDF can also be regenerated
+for the complete real- and complex-domain sparsity comparison.
+
 The node admittance matrix used by the builder normally comes from PGM's own
 internal `math_solver::YBus` instead of the Python reconstruction; the
 Python reconstruction is kept as a cross-check of the extracted matrix. See
@@ -93,7 +114,7 @@ Synchronize the paper-facing copies of the generated figures and table rows:
 mkdir -p ../TSG-WLS-UQ/tables
 cp docs/examples/tsg_wls_uq/figures/cigre_lv_power_sigmas.pdf \
    docs/examples/tsg_wls_uq/figures/gain_inverse_accuracy_vs_zi.pdf \
-   docs/examples/tsg_wls_uq/figures/ieee33_wls_uq_matrix_sparsity.pdf \
+   docs/examples/tsg_wls_uq/figures/ieee33_augmented_matrix_sparsity.pdf \
    docs/examples/tsg_wls_uq/figures/ternary_tree_runtime.pdf \
    ../TSG-WLS-UQ/figs/
 cp docs/examples/tsg_wls_uq/results/one_sigma_interval_rows.tex \
@@ -273,7 +294,9 @@ The paper table rows are `results/one_sigma_interval_rows.tex` and
 additionally writes `results/ieee33_wls_uq_matrices.npz`,
 `results/ieee33_wls_uq_matrix_sparsity.csv`, and
 `results/ieee33_pgm_bus_order.csv`, plus the corresponding PDF and PNG under
-`figures/`. Its real-polar `H` contains every active finite-variance voltage,
+`figures/`. The reduced manuscript figure is generated separately from this
+archive as `figures/ieee33_augmented_matrix_sparsity.pdf`. Its real-polar `H`
+contains every active finite-variance voltage,
 current, branch-power, and aggregated load-injection measurement for the
 `[theta; voltage magnitude]` state. The workflow verifies `G = H.T @ W @ H`
 and compares `diag(G^-1)` with PGM's analytical NRSE output. It separately
