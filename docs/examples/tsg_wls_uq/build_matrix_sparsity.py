@@ -1088,8 +1088,9 @@ def build_real_gain_matrices(
     real_gain_inverse = np.linalg.inv(real_gain)
     real_gain_inverse = 0.5 * (real_gain_inverse + real_gain_inverse.T)
     absolute_inverse_residual = float(np.linalg.norm(real_gain @ real_gain_inverse - np.eye(state_order), ord=np.inf))
-    relative_inverse_residual = absolute_inverse_residual / (
-        np.linalg.norm(real_gain, ord=np.inf) * np.linalg.norm(real_gain_inverse, ord=np.inf)
+    relative_inverse_residual = float(
+        absolute_inverse_residual
+        / (np.linalg.norm(real_gain, ord=np.inf) * np.linalg.norm(real_gain_inverse, ord=np.inf))
     )
     if relative_inverse_residual > MAX_RELATIVE_INVERSE_RESIDUAL:
         raise ValueError(f"Real gain inverse has relative residual {relative_inverse_residual:.3e}")

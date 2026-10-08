@@ -21,7 +21,7 @@ from pathlib import Path
 PGM_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLE_ROOT = PGM_ROOT / "docs" / "examples"
 OUTPUT_ROOT = EXAMPLE_ROOT / "output" / "tsg_wls_uq_accuracy"
-PYTHON = Path(sys.executable).resolve()
+PYTHON = Path(sys.executable)
 SAMPLE_COUNT = 1_000
 EVALUATION_SEED = 2_026
 MONTE_CARLO_TRAINING_SEED = 2_027

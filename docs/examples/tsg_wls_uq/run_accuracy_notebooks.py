@@ -21,7 +21,7 @@ from pathlib import Path
 PGM_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLE_ROOT = PGM_ROOT / "docs" / "examples"
 OUTPUT_ROOT = EXAMPLE_ROOT / "output" / "tsg_wls_uq_accuracy"
-PYTHON = Path(sys.executable).resolve()
+PYTHON = Path(sys.executable)
 
 NOTEBOOKS = {
     "cigre_mv": ("CIGRE MV State Estimation UQ Example.ipynb", "cigre_mv_radial"),
