@@ -81,6 +81,12 @@ unsupported components or terminals fail explicitly. The legacy
 `build_ieee33_sparsity.py` remains a compatibility wrapper for the default
 case.
 
+The node admittance matrix used by the builder normally comes from PGM's own
+internal `math_solver::YBus` instead of the Python reconstruction; the
+Python reconstruction is kept as a cross-check of the extracted matrix. See
+[Y_bus extraction from PGM internals](#y_bus-extraction-from-pgm-internals)
+for the tooling, build steps, and the `--y-bus-source` options.
+
 Synchronize the paper-facing copies of the generated figures and table rows:
 
 ```sh
@@ -109,6 +115,116 @@ expensive.  For a smoke test, use the network selectors accepted by the
 accuracy and interval runners and `--max-buses`/`--mc-max-buses` with a small
 value in the runtime runner; reduced runs do not reproduce the reported
 numbers.
+
+## Y_bus extraction from PGM internals
+
+PGM's Python and C APIs do not expose the nodal admittance matrix: it exists
+only inside the C++ math solver as `math_solver::YBus`
+(`power_grid_model_c/power_grid_model/include/power_grid_model/math_solver/y_bus.hpp`).
+The matrix builder therefore has two Y_bus sources:
+
+- the Python reconstruction in this workflow, which re-implements PGM's
+  line/transformer terminal-admittance parameterization from the `input`
+  dataset, and
+- the extraction tooling below, which reads the matrix that PGM itself
+  assembles and uses as the ground truth for that reconstruction.
+
+### C++ extraction tool
+
+`power_grid_model_c_example/extract_y_bus.cpp` takes a serialized PGM `input`
+dataset, rebuilds the same internal model state that `MainModel` builds before
+a calculation (component construction, `main_core::construct_topology`,
+topology reduction and renumbering), and then calls
+`main_core::prepare_y_bus` to construct the symmetric `math_solver::YBus`
+objects without instantiating any solver. For every isolated mathematical
+sub-network it dumps the CSR structure, the complex admittance values, the
+math-bus to input-node coupling, and the slack-bus and radiality metadata.
+
+```sh
+power_grid_model_c_example_extract_y_bus input.json output.json [system_frequency]
+```
+
+`system_frequency` defaults to 50 Hz and must match the frequency used to
+construct the PGM model, since line shunt admittances depend on it. The
+output JSON has the form:
+
+```json
+{
+  "version": "1.13",
+  "system_frequency": 50.0,
+  "n_sub_networks": 1,
+  "sub_networks": [
+    {
+      "n_bus": 2,
+      "is_radial": true,
+      "slack_bus": 1,
+      "bus_node_ids": [1, 0],
+      "row_indptr": [0, 2, 4],
+      "col_indices": [0, 1, 0, 1],
+      "admittance_real": [220.50000017, -220.5, -220.5, 220.50000017],
+      "admittance_imag": [-440.99998268, 441.0, 441.0, -440.99998268]
+    }
+  ]
+}
+```
+
+`bus_node_ids` lists the input node ID per math-bus position, i.e. PGM's own
+solver bus ordering (reversed source-rooted DFS for radial networks), and
+`slack_bus` indexes into it. Admittances are per-unit on PGM's 1-MVA
+three-phase base, accumulated exactly as in `YBus::update_admittance_entries`:
+branch `yff`/`yft`/`ytf`/`ytt` contributions plus shunt contributions per
+matrix position.
+
+### Building the tool
+
+The extractor is part of the C API example directory and is only compiled in
+a C++ development build (`PGM_ENABLE_DEV_BUILD=ON`). Development presets
+such as `clang-release` and `gcc-release` enable it and build into
+`cpp_build/<preset>/`:
+
+```sh
+cmake --preset clang-release
+cmake --build --preset clang-release --target power_grid_model_c_example_extract_y_bus
+```
+
+The binary is placed in the build's `bin/` directory, e.g.
+`cpp_build/clang-release/bin/power_grid_model_c_example_extract_y_bus`.
+
+### Python helper
+
+`docs/examples/tsg_wls_uq/extract_pgm_y_bus.py` wraps the binary:
+
+- `find_extractor()` locates the binary through the `PGM_EXTRACT_Y_BUS`
+  environment variable (which must point at an executable), then the
+  executable search path, then `cpp_build/*/bin/` and `build/bin/` under the
+  repository root.
+- `extract_pgm_y_bus(inputs, system_frequency)` serializes the case `input`
+  dataset to a temporary JSON file, runs the tool, and returns a
+  `PgmYBusExtraction` with one `PgmSubNetworkYBus` per sub-network (CSR
+  arrays plus the dense complex matrix in math-bus order) and, when there is
+  exactly one sub-network covering every input node, the dense matrix
+  permuted into input node order.
+
+### Matrix-builder integration
+
+`build_matrix_sparsity.py --y-bus-source` selects the provenance:
+
+- `auto` (default): extract PGM's Y_bus when the binary is available and fall
+  back to the Python reconstruction when it is not.
+- `pgm`: require the extraction; fail with `FileNotFoundError` if the binary
+  cannot be located.
+- `python`: skip the extraction and use only the reconstruction.
+
+Whenever an extraction is used, the builder asserts that the extracted
+math-bus ordering equals `pgm_radial_bus_order()` (and hence the case
+expectations) and that the reconstructed dense Y_bus matches the extracted
+one element-wise with relative and absolute tolerances of 1e-12 before
+substituting PGM's matrix for all downstream complex matrices. The matrix archive records the provenance in
+`y_bus_source` (`pgm` or `python`), `y_bus_extractor_version`, and
+`maximum_y_bus_difference` (maximum absolute element difference in per-unit,
+NaN when skipped), and the run summary prints the same metric. For the IEEE
+33 and CIGRE MV cases the reconstruction agrees with PGM's internal matrix
+to about 2.3e-13 per unit.
 
 ## Input locations
 

@@ -12,7 +12,20 @@ target_link_libraries(
 )
 
 add_executable(power_grid_model_c_example_logging logging.c)
-target_link_libraries(power_grid_model_c_example_logging PRIVATE power_grid_model_c)
+target_link_libraries(
+    power_grid_model_c_example_logging
+    PRIVATE power_grid_model_c
+)
+
+add_executable(power_grid_model_c_example_extract_y_bus extract_y_bus.cpp)
+target_link_libraries(
+    power_grid_model_c_example_extract_y_bus
+    PRIVATE power_grid_model_cpp power_grid_model
+)
+target_compile_definitions(
+    power_grid_model_c_example_extract_y_bus
+    PRIVATE PGM_VERSION="${PGM_VERSION}" PGM_ENABLE_EXPERIMENTAL
+)
 
 add_test(
     PGMExample

@@ -62,6 +62,10 @@ from gain_matrix import (  # noqa: E402
     build_measurement_model,
 )
 
+sys.path.insert(0, str(WORKFLOW_ROOT))
+
+from extract_pgm_y_bus import PgmYBusExtraction, extract_pgm_y_bus, find_extractor  # noqa: E402
+
 BASE_POWER_3P = 1.0e6
 FIGURE_SIZE = (7.16, 4.8)
 PREVIEW_DPI = 300
@@ -80,6 +84,10 @@ REAL_MEASUREMENT_GROUPS = (
 )
 SUPPORTED_CASE_NAMES = ("ieee33", "cigre-mv")
 NODE_INJECTION_TERMINAL_TYPE = 9  # MeasuredTerminalType.node without triggering its deprecation warning.
+Y_BUS_SOURCE_CHOICES = ("auto", "pgm", "python")
+DEFAULT_Y_BUS_SOURCE = "auto"
+Y_BUS_EXTRACTION_RTOL = 1.0e-12
+Y_BUS_EXTRACTION_ATOL = 1.0e-12
 
 
 @dataclass(frozen=True)
@@ -506,8 +514,52 @@ def pgm_radial_bus_order(
     return solver_bus_ids
 
 
-def assemble_matrices(case: SparsityCase) -> tuple[dict[str, np.ndarray], float, np.ndarray, np.ndarray]:
-    """Reconstruct PGM's ordered complex ILSE matrices for a supported case."""
+def validate_y_bus_against_pgm_extraction(
+    case: SparsityCase,
+    reconstructed_y_bus: np.ndarray,
+    solver_bus_ids: np.ndarray,
+    *,
+    y_bus_source: str,
+) -> tuple[PgmYBusExtraction | None, float]:
+    """Cross-check the reconstructed Y_bus against PGM's internal Y_bus.
+
+    With ``y_bus_source == "auto"`` a missing extractor binary silently falls
+    back to the reconstruction; ``"pgm"`` requires it; ``"python"`` skips the
+    extraction entirely.  Returns the extraction and the maximum absolute
+    element difference, or ``nan`` when skipped.
+    """
+    if y_bus_source == "python":
+        return None, float("nan")
+    extractor = find_extractor()
+    if extractor is None:
+        if y_bus_source == "pgm":
+            raise FileNotFoundError("y_bus_source='pgm' requires the compiled PGM Y_bus extractor binary")
+        return None, float("nan")
+    extraction = extract_pgm_y_bus(case.inputs, case.system_frequency, extractor=extractor)
+    if extraction.y_bus_input_order is None:
+        raise NotImplementedError("PGM Y_bus extraction requires one connected sub-network covering all nodes")
+    np.testing.assert_array_equal(extraction.sub_networks[0].bus_node_ids, np.asarray(solver_bus_ids, dtype=int))
+    np.testing.assert_allclose(
+        extraction.y_bus_input_order,
+        reconstructed_y_bus,
+        rtol=Y_BUS_EXTRACTION_RTOL,
+        atol=Y_BUS_EXTRACTION_ATOL,
+    )
+    maximum_difference = float(np.max(np.abs(extraction.y_bus_input_order - reconstructed_y_bus)))
+    return extraction, maximum_difference
+
+
+def assemble_matrices(
+    case: SparsityCase,
+    *,
+    y_bus_source: str = DEFAULT_Y_BUS_SOURCE,
+) -> tuple[dict[str, np.ndarray], float, np.ndarray, np.ndarray, PgmYBusExtraction | None, float]:
+    """Reconstruct PGM's ordered complex ILSE matrices for a supported case.
+
+    The node admittance matrix comes from PGM's own ``math_solver::YBus`` when
+    the extractor binary is available (or required by ``y_bus_source``); the
+    Python reconstruction is always cross-checked against it.
+    """
     topology = case.topology
     inputs = case.inputs
     unsupported_components = {
@@ -551,6 +603,15 @@ def assemble_matrices(case: SparsityCase) -> tuple[dict[str, np.ndarray], float,
     )
     solver_rank = {int(bus_id): rank for rank, bus_id in enumerate(solver_bus_ids)}
     solver_positions = np.asarray([bus_index[int(bus_id)] for bus_id in solver_bus_ids], dtype=int)
+
+    y_bus_extraction, maximum_y_bus_difference = validate_y_bus_against_pgm_extraction(
+        case,
+        y_bus_input,
+        solver_bus_ids,
+        y_bus_source=y_bus_source,
+    )
+    if y_bus_extraction is not None and y_bus_extraction.y_bus_input_order is not None:
+        y_bus_input = y_bus_extraction.y_bus_input_order
 
     def terminal_row(branch_id: int, terminal_type: int) -> tuple[np.ndarray, int, int, str]:
         try:
@@ -762,7 +823,7 @@ def assemble_matrices(case: SparsityCase) -> tuple[dict[str, np.ndarray], float,
             [injection_component_variances.get(int(bus_id), (np.nan, np.nan))[1] for bus_id in solver_bus_ids]
         ),
     }
-    return matrices, variance_normalization, shuffle, solver_bus_ids
+    return matrices, variance_normalization, shuffle, solver_bus_ids, y_bus_extraction, maximum_y_bus_difference
 
 
 def real_measurement_group(label: str) -> str:
@@ -1261,6 +1322,7 @@ def build_sparsity_artifacts(
     relative_threshold: float = DEFAULT_RELATIVE_THRESHOLD,
     output_root: Path = WORKFLOW_ROOT,
     render_figure: bool = True,
+    y_bus_source: str = DEFAULT_Y_BUS_SOURCE,
 ) -> tuple[dict[str, np.ndarray], pd.DataFrame, dict[str, float]]:
     """Build, validate, and persist all artifacts for ``case``."""
     if not 0.0 <= relative_threshold < 1.0:
@@ -1273,8 +1335,17 @@ def build_sparsity_artifacts(
         raise ValueError("error_tolerance must be positive and finite")
     if case.max_iterations <= 0:
         raise ValueError("max_iterations must be positive")
+    if y_bus_source not in Y_BUS_SOURCE_CHOICES:
+        raise ValueError(f"y_bus_source must be one of {Y_BUS_SOURCE_CHOICES}, not {y_bus_source!r}")
 
-    complex_matrices, variance_normalization, shuffle, node_ids = assemble_matrices(case)
+    (
+        complex_matrices,
+        variance_normalization,
+        shuffle,
+        node_ids,
+        y_bus_extraction,
+        maximum_y_bus_difference,
+    ) = assemble_matrices(case, y_bus_source=y_bus_source)
     real_matrices, real_validation = build_real_gain_matrices(case, complex_matrices, node_ids)
     matrices = complex_matrices | real_matrices
     matrices["pgm_bus_order"] = node_ids
@@ -1327,12 +1398,18 @@ def build_sparsity_artifacts(
         base_power_3p=np.asarray(BASE_POWER_3P),
         error_tolerance=np.asarray(case.error_tolerance),
         max_iterations=np.asarray(case.max_iterations),
+        y_bus_source=np.asarray("pgm" if y_bus_extraction is not None else "python"),
+        y_bus_extractor_version=np.asarray("" if y_bus_extraction is None else y_bus_extraction.version),
+        maximum_y_bus_difference=np.asarray(maximum_y_bus_difference),
     )
     summary.to_csv(results_root / f"{case.figure_stem}.csv", index=False)
     pd.DataFrame({"pgm_position": np.arange(node_ids.size), "bus_id": node_ids}).to_csv(
         results_root / case.bus_order_name, index=False
     )
-    validation = real_validation | {"maximum_complex_sigma_error": maximum_complex_sigma_error}
+    validation = real_validation | {
+        "maximum_complex_sigma_error": maximum_complex_sigma_error,
+        "maximum_y_bus_difference": maximum_y_bus_difference,
+    }
     return matrices, summary, validation
 
 
@@ -1360,6 +1437,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_RELATIVE_THRESHOLD,
         help="Relative cutoff tau in |M_ij| > tau ||M||_inf.",
     )
+    parser.add_argument(
+        "--y-bus-source",
+        choices=Y_BUS_SOURCE_CHOICES,
+        default=DEFAULT_Y_BUS_SOURCE,
+        help=(
+            "Y_bus provenance: 'pgm' requires the compiled PGM extractor, 'python' uses only the "
+            "reconstruction, 'auto' extracts when the binary is available (default: auto)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -1373,6 +1459,7 @@ def main(argv: list[str] | None = None) -> None:
         case,
         relative_threshold=args.relative_threshold,
         output_root=args.output_root,
+        y_bus_source=args.y_bus_source,
     )
     print(summary.to_string(index=False, formatters={"density": "{:.6f}".format}))
     group_counts = dict(
@@ -1392,6 +1479,10 @@ def main(argv: list[str] | None = None) -> None:
     )
     print(f"Maximum injection-Jacobian finite-difference error: {validation['maximum_injection_jacobian_error']:.3e}")
     print(f"Real gain-inverse normwise relative residual: {validation['real_gain_inverse_relative_residual']:.3e}")
+    if np.isnan(validation["maximum_y_bus_difference"]):
+        print("Y_bus source: Python reconstruction")
+    else:
+        print(f"Maximum Y_bus extraction difference vs PGM: {validation['maximum_y_bus_difference']:.3e} p.u.")
     print(f"Style: {STYLE}; figure size: {FIGURE_SIZE} in; PNG DPI: {PREVIEW_DPI}")
 
 

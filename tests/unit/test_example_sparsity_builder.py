@@ -35,6 +35,7 @@ from build_matrix_sparsity import (  # noqa: E402
     load_case,
     select_full_measurement_angle_references,
 )
+from extract_pgm_y_bus import find_extractor  # noqa: E402
 
 MAX_COMPLEX_SIGMA_ERROR = 1.0e-6
 MAX_INJECTION_JACOBIAN_ERROR = 3.0e-6
@@ -47,12 +48,18 @@ def cigre_case() -> SparsityCase:
     return load_case("cigre-mv")
 
 
-def test_cigre_mv_exercises_generalized_sparsity_builder(tmp_path: Path, cigre_case: SparsityCase) -> None:
+@pytest.mark.parametrize("y_bus_source", ["python", "auto", "pgm"])
+def test_cigre_mv_exercises_generalized_sparsity_builder(
+    tmp_path: Path, cigre_case: SparsityCase, y_bus_source: str
+) -> None:
     """A transformer-containing non-33-bus case must use only derived dimensions."""
+    if y_bus_source == "pgm" and find_extractor() is None:
+        pytest.skip("The optional PGM Y_bus extractor is not built")
     matrices, summary, validation = build_sparsity_artifacts(
         cigre_case,
         output_root=tmp_path,
         render_figure=False,
+        y_bus_source=y_bus_source,
     )
 
     assert matrices["y_bus"].shape == (15, 15)
@@ -77,6 +84,31 @@ def test_cigre_mv_exercises_generalized_sparsity_builder(tmp_path: Path, cigre_c
     assert (tmp_path / "results" / "cigre_mv_wls_uq_matrix_sparsity.csv").is_file()
     assert (tmp_path / "results" / "cigre_mv_pgm_bus_order.csv").is_file()
     assert not (tmp_path / "figures").exists()
+
+    with np.load(tmp_path / "results" / "cigre_mv_wls_uq_matrices.npz") as archive:
+        expected_source = "pgm" if y_bus_source != "python" and find_extractor() is not None else "python"
+        assert archive["y_bus_source"].item() == expected_source
+        if expected_source == "pgm":
+            assert archive["y_bus_extractor_version"].item()
+            assert validation["maximum_y_bus_difference"] < MAX_INVERSE_RESIDUAL
+        else:
+            assert np.isnan(validation["maximum_y_bus_difference"])
+
+
+def test_missing_y_bus_extractor_falls_back_only_in_auto_mode(
+    cigre_case: SparsityCase, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A required PGM matrix must never silently become a Python reconstruction."""
+    monkeypatch.setattr("build_matrix_sparsity.find_extractor", lambda: None)
+    reconstructed, _, _, _, extraction, difference = assemble_matrices(cigre_case, y_bus_source="python")
+    automatic, _, _, _, auto_extraction, auto_difference = assemble_matrices(cigre_case, y_bus_source="auto")
+    np.testing.assert_array_equal(automatic["y_bus"], reconstructed["y_bus"])
+    assert extraction is None
+    assert auto_extraction is None
+    assert np.isnan(difference)
+    assert np.isnan(auto_difference)
+    with pytest.raises(FileNotFoundError, match="requires the compiled PGM Y_bus extractor"):
+        assemble_matrices(cigre_case, y_bus_source="pgm")
 
 
 def test_unsupported_static_shunt_fails_explicitly(tmp_path: Path, cigre_case: SparsityCase) -> None:
@@ -161,7 +193,7 @@ def test_repeated_current_sensors_are_combined_by_cartesian_channel() -> None:
 
 def test_disabled_repeated_current_sensor_is_ignored(tmp_path: Path, cigre_case: SparsityCase) -> None:
     """Infinite-sigma duplicate and unsupported-angle sensors add no precision."""
-    baseline, _, _, _ = assemble_matrices(cigre_case)
+    baseline, _, _, _, _, _ = assemble_matrices(cigre_case)
     current_sensors = cigre_case.inputs[CT.sym_current_sensor]
     disabled_sensors = np.repeat(current_sensors[:1], 2)
     maximum_id = max(int(np.max(component[AT.id])) for component in cigre_case.inputs.values() if component.size)
