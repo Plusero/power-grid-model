@@ -16,6 +16,7 @@ SPDX-License-Identifier = "MPL-2.0"
 [[annotations]]
 path = [
     "docs/examples/tsg_wls_uq/figures/*.pdf",
+    "docs/examples/tsg_wls_uq/figures/*.png",
     "docs/examples/tsg_wls_uq/results/*",
 ]
 precedence = "override"

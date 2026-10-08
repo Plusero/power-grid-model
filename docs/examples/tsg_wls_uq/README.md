@@ -1,8 +1,10 @@
 # TSG WLS-UQ numerical experiments
 
 This directory is the PGM-owned source of the numerical experiments, compact
-results, and generated numerical figures for the TSG WLS-UQ manuscript.  The
-paper build assumes sibling checkouts with this layout:
+results, and figure generators for the TSG WLS-UQ manuscript. Generated PDF
+and PNG figures and NPZ matrix archives are local build outputs excluded from
+Git; the source scripts, compact CSV results, LaTeX table rows, and provenance
+metadata are versioned. The paper build assumes sibling checkouts with this layout:
 
 ```text
 <workspace>/
@@ -141,8 +143,9 @@ copies.
 |---|---|---|
 | Temporary accuracy and interval output | `docs/examples/output/tsg_wls_uq_accuracy/<case>/` | Per-case comparison and baseline-metric CSV files, one-sigma interval scores, figures, and execution logs. The case directories are `cigre_mv_radial`, `cigre_lv`, `ieee33`, `mv_oberrhein`, and `lv_schutterwald`. |
 | Temporary runtime output | `docs/examples/output/tsg_wls_uq_runtime/` | `ternary_tree_runtime.csv` and `runtime_metadata.json` produced by the runtime runner. |
-| Retained paper-oriented results | `docs/examples/tsg_wls_uq/results/` | Compact CSV summaries, runtime and fitted-scaling data, the two LaTeX table fragments, provenance metadata, and the IEEE33 matrix NPZ/CSV artifacts. These are the authoritative numerical results used to rebuild the paper artifacts. |
-| Retained generated figures | `docs/examples/tsg_wls_uq/figures/` | The four paper PDF figures and the IEEE33 PNG preview. These are the authoritative generated figure files. |
+| Versioned paper-oriented results | `docs/examples/tsg_wls_uq/results/` | Compact CSV summaries, runtime and fitted-scaling data, the two LaTeX table fragments, provenance metadata, and IEEE33 matrix sparsity and bus-order CSV files. These are the retained numerical results used to rebuild the paper artifacts. |
+| Generated matrix archives | `docs/examples/tsg_wls_uq/results/*.npz` | Local matrix archives recreated by the matrix builder and excluded from Git. |
+| Generated figures | `docs/examples/tsg_wls_uq/figures/` | Local paper PDFs, the original eight-panel IEEE33 diagnostic figure, and PNG previews. These are recreated by the generators and excluded from Git. |
 | Manuscript-facing copies | `../TSG-WLS-UQ/tables/` and `../TSG-WLS-UQ/figs/` | Copies consumed by `../TSG-WLS-UQ/main.tex`. They must be synchronized after regeneration and are not a second authoritative results source. |
 
 Within `docs/examples/tsg_wls_uq/`, for example,
@@ -169,7 +172,9 @@ the complex augmented formulation.
 The historical producing checkout and source hashes remain in
 `results/experiment_metadata.json`.  Because relocation did not rerun the
 experiments, `results/migration_manifest.json` separately records the current
-PGM script hashes and retained-artifact hashes.  A complete rerun refreshes the
+PGM script hashes, retained-result hashes, and historical hashes of generated
+figures and matrix archives. These hashes document the original artifacts;
+ignored binary files must be regenerated on a fresh checkout. A complete rerun refreshes the
 experiment metadata with current PGM paths and hashes; only then should the
 migration manifest be replaced or removed.
 

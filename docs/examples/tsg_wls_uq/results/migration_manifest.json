@@ -10,9 +10,6 @@
     "docs/examples/tsg_wls_uq/run_runtime_benchmark.py": "a7e58d19e872b658ee448da899c88769a9431e1a9c2c5c2416d72f1be3a5bd54"
   },
   "retained artifact sha256": {
-    "figures/cigre_lv_power_sigmas.pdf": "100141a43646a0cb3379e05a43529debfe0d0d09a83a567d1f45009c50194b83",
-    "figures/gain_inverse_accuracy_vs_zi.pdf": "6104f85cedf0d2b37f2756baba65de8a6c57818753f2082e95ec262d249d6750",
-    "figures/ternary_tree_runtime.pdf": "f76f05c5a6c67c7f1e7f99a0f7a147664c7d6dad720814ab54e7110c5eb6b072",
     "results/absolute_sigma_medians_by_voltage_level.csv": "e665a3a849e1daa76448de0fa3216e4f1d7ae1da7083b879f242758b7ba93cc8",
     "results/accuracy_median_ape.csv": "f39f985fa289e82f2ed7b2d9b3c3b332af32ca7994d03ce709df1fa2dc079e64",
     "results/experiment_metadata.json": "2cfd1df6aa5ebb251124fa41ed42f46d54dc2242b1e49f3bc3bd2cb8a1f9792b",
@@ -23,5 +20,10 @@
     "results/timing_power_law_rows.tex": "08cfc247c4500e9dec7b8e414c1dafeab602c8e943c2fc64140798c67ff20c20",
     "results/timing_power_laws.csv": "d21f9860c4aad82d5ed761f597725024473a903308dd43e47de43ebff591faca"
   },
-  "refresh rule": "Run the full workflow documented in ../README.md to regenerate the results, figures, and experiment_metadata.json from the current PGM-owned scripts. Replace or remove this migration manifest only after that full rerun."
+  "refresh rule": "Run the full workflow documented in ../README.md to regenerate the results, figures, and experiment_metadata.json from the current PGM-owned scripts. Replace or remove this migration manifest only after that full rerun.",
+  "historical generated artifact sha256": {
+    "figures/cigre_lv_power_sigmas.pdf": "100141a43646a0cb3379e05a43529debfe0d0d09a83a567d1f45009c50194b83",
+    "figures/gain_inverse_accuracy_vs_zi.pdf": "6104f85cedf0d2b37f2756baba65de8a6c57818753f2082e95ec262d249d6750",
+    "figures/ternary_tree_runtime.pdf": "f76f05c5a6c67c7f1e7f99a0f7a147664c7d6dad720814ab54e7110c5eb6b072"
+  }
 }

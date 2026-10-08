@@ -436,8 +436,13 @@ target/
 .ipynb_checkpoints
 
 # Large, reproducible raw outputs from the example notebooks and UQ benchmarks.
-# Compact paper artifacts remain under docs/examples/tsg_wls_uq/.
+# Compact text summaries remain under docs/examples/tsg_wls_uq/results/.
 /docs/examples/output/
+
+# Reproducible paper figures and matrix archives (including license sidecars).
+/docs/examples/tsg_wls_uq/figures/
+/docs/examples/tsg_wls_uq/results/*.npz
+/docs/examples/tsg_wls_uq/results/*.npz.license
 
 # IPython
 profile_default/
