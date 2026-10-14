@@ -604,4 +604,22 @@ TEST_CASE("LU solver with ill-conditioned system") {
     }
 }
 
+TEST_CASE("Original covariance pattern preserves structural zeros and never extends neighborhoods") {
+    using Tensor = Eigen::Array<double, 2, 2>;
+    using Array = Eigen::Array<double, 2, 1>;
+    IdxVector const rows{0, 2, 4, 6, 10};
+    IdxVector const cols{0, 3, 1, 3, 2, 3, 0, 1, 2, 3};
+    std::vector<Tensor> values(cols.size(), Tensor::Zero());
+    // Empty neighborhoods deliberately cannot be passed to the extension builder.
+    ExtendedSparseLUData<Tensor, Array, Array> original{rows, cols, {}, {}, values, false};
+    CHECK(original.structure.row_indptr == rows);
+    CHECK(original.structure.col_indices == cols);
+    CHECK(original.structure.find_entry(0, 3) == 1);
+    CHECK(original.data[1].isZero());
+    CHECK_THROWS_AS(original.structure.find_entry(0, 1), SparseMatrixError);
+    for (Idx idx = 0; idx != std::ssize(cols); ++idx) {
+        CHECK(original.structure.map_to_source[idx] == idx);
+    }
+}
+
 } // namespace power_grid_model::math_solver

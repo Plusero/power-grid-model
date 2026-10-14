@@ -30,6 +30,8 @@
 #include "../component/voltage_regulator.hpp"
 #include "../component/voltage_sensor.hpp"
 
+#include "../math_solver/injection_experiment.hpp"
+
 #include <algorithm>
 #include <concepts>
 #include <ranges>
@@ -134,6 +136,14 @@ constexpr auto output_result(Component const& node, MainModelState<ComponentCont
     }
 
     auto const& solver_output = math_output.solver_output[math_id.group];
+    if (injection_experiment::enabled() && solver_output.bus_uncertainty.size() == solver_output.u.size()) {
+        injection_experiment::write(
+            {{"kind", "mapping"},
+             {"node_id", node.id()},
+             {"math_bus_id", math_id.pos},
+             {"math_group", math_id.group},
+             {"solver_key", std::to_string(reinterpret_cast<std::uintptr_t>(solver_output.u.data()))}});
+    }
     auto const voltage = get_voltage_output(math_output, math_id);
     auto const bus_injection = get_bus_injection_output_from_topo_id(math_output, topo_id);
     if (solver_output.bus_uncertainty.size() == solver_output.u.size()) {

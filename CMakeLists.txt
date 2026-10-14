@@ -13,6 +13,22 @@ project(power_grid_model VERSION ${PGM_VERSION})
 
 option(PGM_ENABLE_DEV_BUILD "Enable developer build (e.g.: tests)" OFF)
 
+set(PGM_INJECTION_SCHEME
+    "full"
+    CACHE STRING
+    "Experiment-only injection covariance scheme"
+)
+set_property(
+    CACHE PGM_INJECTION_SCHEME
+    PROPERTY STRINGS full zero positive bound
+)
+set(_injection_schemes full zero positive bound)
+list(FIND _injection_schemes "${PGM_INJECTION_SCHEME}" _injection_scheme_index)
+if(_injection_scheme_index LESS 0)
+    message(FATAL_ERROR "Unknown PGM_INJECTION_SCHEME")
+endif()
+add_compile_definitions(PGM_INJECTION_SCHEME=${_injection_scheme_index})
+
 set(PGM_C_STANDARD 11)
 set(PGM_CXX_STANDARD 23)
 

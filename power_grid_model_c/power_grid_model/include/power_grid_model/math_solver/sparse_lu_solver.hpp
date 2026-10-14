@@ -78,6 +78,21 @@ struct ExtendedSparseMatrixStructure {
     }
 };
 
+// Copy an already filled LU pattern without invoking covariance extension.
+inline ExtendedSparseMatrixStructure copy_covariance_structure(std::span<Idx const> rows, std::span<Idx const> cols) {
+    ExtendedSparseMatrixStructure result;
+    result.row_indptr.assign(rows.begin(), rows.end());
+    result.col_indices.assign(cols.begin(), cols.end());
+    result.map_to_source.resize(cols.size());
+    for (Idx idx = 0; idx != std::ssize(cols); ++idx) {
+        result.map_to_source[idx] = idx;
+    }
+    for (Idx row = 0; row + 1 < std::ssize(rows); ++row) {
+        result.diag.push_back(result.find_entry(row, row));
+    }
+    return result;
+}
+
 // Extend an already filled symmetric factor pattern with cliques over every supplied neighborhood, then compute
 // the additional symbolic fill required by the existing elimination order. This makes every pair of variables in a
 // neighborhood available to the selected-inverse sweep without materializing the full inverse.
@@ -937,9 +952,10 @@ template <class Tensor, class RHSVector, class XVector> struct ExtendedSparseLUD
 
     ExtendedSparseLUData(std::span<Idx const> source_row_indptr, std::span<Idx const> source_col_indices,
                          std::span<Idx const> neighborhood_row_indptr, std::span<Idx const> neighborhood_col_indices,
-                         std::vector<Tensor> const& source_data)
-        : structure{build_extended_covariance_structure(source_row_indptr, source_col_indices, neighborhood_row_indptr,
-                                                        neighborhood_col_indices)},
+                         std::vector<Tensor> const& source_data, bool extend = true)
+        : structure{extend ? build_extended_covariance_structure(source_row_indptr, source_col_indices,
+                                                                 neighborhood_row_indptr, neighborhood_col_indices)
+                           : copy_covariance_structure(source_row_indptr, source_col_indices)},
           data(structure.col_indices.size()),
           solver{structure.row_indptr, structure.col_indices, structure.diag},
           permutation(structure.diag.size()) {

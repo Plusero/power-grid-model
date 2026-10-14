@@ -8,6 +8,7 @@
 
 #include "block_matrix.hpp"
 #include "common_solver_functions.hpp"
+#include "injection_experiment.hpp"
 #include "measured_values.hpp"
 #include "observability.hpp"
 #include "sparse_lu_solver.hpp"
@@ -483,7 +484,8 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
     }
 
     void calculate_bus_injection_uncertainty(YBus<sym> const& y_bus, UncertaintyMatrix const& uncertainty_matrix,
-                                             double variance_normalization, SolverOutput<sym>& output) {
+                                             double variance_normalization, SolverOutput<sym>& output,
+                                             nlohmann::json& diagnostics) {
         for (Idx bus = 0; bus != n_bus_; ++bus) {
             PhaseVector current = PhaseVector::Zero();
             for (Idx idx = y_bus.row_indptr()[bus]; idx != y_bus.row_indptr()[bus + 1]; ++idx) {
@@ -507,23 +509,91 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                     k_blocks.emplace_back(col, std::move(k));
                 }
 
+                auto const available = [&](Idx row, Idx col) {
+                    auto const first = y_bus.col_indices_lu().begin() + y_bus.row_indptr_lu()[row];
+                    auto const last = y_bus.col_indices_lu().begin() + y_bus.row_indptr_lu()[row + 1];
+                    return std::binary_search(first, last, col);
+                };
+                double positive_correction = 0.0;
+                double bound_correction = 0.0;
+                Idx missing_count = 0;
+                for (auto const& [left, left_k] : k_blocks) {
+                    for (auto const& [right, right_k] : k_blocks) {
+                        if (left >= right || available(left, right)) {
+                            continue;
+                        }
+                        if (left == bus || right == bus) {
+                            throw SparseMatrixError{};
+                        }
+                        if constexpr (is_symmetric_v<sym>) {
+                            double const left_var =
+                                std::real(selected_voltage_covariance(uncertainty_matrix, left, left)(0, 0));
+                            double const right_var =
+                                std::real(selected_voltage_covariance(uncertainty_matrix, right, right)(0, 0));
+                            double const diagonal_tolerance = 1000.0 * std::numeric_limits<double>::epsilon() *
+                                                              std::max({1.0, std::abs(left_var), std::abs(right_var)});
+                            if (!std::isfinite(left_var) || !std::isfinite(right_var) ||
+                                left_var < -diagonal_tolerance || right_var < -diagonal_tolerance) {
+                                throw SparseMatrixError{};
+                            }
+                            double const marginal = std::sqrt(std::max(0.0, left_var) * std::max(0.0, right_var));
+                            auto const product = std::conj(left_k(0)) * right_k(0);
+                            positive_correction += variance_normalization * std::real(product) * marginal;
+                            bound_correction += variance_normalization * std::abs(product) * marginal;
+                            ++missing_count;
+                            if (injection_experiment::enabled()) {
+                                nlohmann::json pair{{"bus", bus}, {"j", left}, {"m", right}};
+                                if constexpr (injection_experiment::scheme == 0) {
+                                    auto const value =
+                                        variance_normalization *
+                                        selected_voltage_covariance(uncertainty_matrix, left, right)(0, 0);
+                                    pair["V"] = {value.real(), value.imag()};
+                                }
+                                diagnostics["missing_pairs"].push_back(pair);
+                            }
+                        }
+                    }
+                }
+                auto const injection_covariance = [&](Idx left, Idx right) -> PhaseMatrix {
+                    if constexpr (injection_experiment::scheme != 0) {
+                        if (!available(left, right)) {
+                            if (left == bus || right == bus || left == right) {
+                                throw SparseMatrixError{};
+                            }
+                            return PhaseMatrix::Zero();
+                        }
+                    }
+                    return selected_voltage_covariance(uncertainty_matrix, left, right);
+                };
                 DoubleComplex const h_v_hh = h.dot(selected_voltage_covariance(uncertainty_matrix, bus, bus) * h);
                 DoubleComplex h_v_kt{};
                 DoubleComplex k_conj_v_kt{};
                 for (auto const& [right_bus, right_k] : k_blocks) {
                     h_v_kt += h.dot(selected_voltage_covariance(uncertainty_matrix, bus, right_bus) * right_k);
                     for (auto const& [left_bus, left_k] : k_blocks) {
-                        k_conj_v_kt +=
-                            left_k.dot(selected_voltage_covariance(uncertainty_matrix, left_bus, right_bus) * right_k);
+                        k_conj_v_kt += left_k.dot(injection_covariance(left_bus, right_bus) * right_k);
                     }
                 }
 
                 double const covariance = std::real(h_v_hh + std::conj(k_conj_v_kt));
                 double const pseudo_covariance = 2.0 * std::real(h_v_kt);
-                double const p_variance = 0.5 * variance_normalization * (covariance + pseudo_covariance);
-                double const q_variance = 0.5 * variance_normalization * (covariance - pseudo_covariance);
+                double const correction = injection_experiment::scheme == 2   ? positive_correction
+                                          : injection_experiment::scheme == 3 ? bound_correction
+                                                                              : 0.0;
+                double const p_variance = 0.5 * variance_normalization * (covariance + pseudo_covariance) + correction;
+                double const q_variance = 0.5 * variance_normalization * (covariance - pseudo_covariance) + correction;
                 double const scale =
                     0.5 * variance_normalization * (std::abs(covariance) + std::abs(pseudo_covariance));
+                if (injection_experiment::enabled()) {
+                    diagnostics["variances"].push_back({{"bus", bus},
+                                                        {"phase", phase},
+                                                        {"P", p_variance},
+                                                        {"Q", q_variance},
+                                                        {"scale", scale},
+                                                        {"missing_pair_count", missing_count},
+                                                        {"D_positive", positive_correction},
+                                                        {"B", bound_correction}});
+                }
                 set_phase_value(output.bus_uncertainty[bus].p_sigma, phase, variance_to_sigma(p_variance, scale));
                 set_phase_value(output.bus_uncertainty[bus].q_sigma, phase, variance_to_sigma(q_variance, scale));
             }
@@ -681,6 +751,22 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
             throw SparseMatrixError{};
         }
 
+        if constexpr (!is_symmetric_v<sym> && injection_experiment::scheme != 0) {
+            throw std::runtime_error{"Injection experiment supports symmetric ILSE only"};
+        }
+        nlohmann::json diagnostics;
+        auto complex_json = [](DoubleComplex value) { return nlohmann::json::array({value.real(), value.imag()}); };
+        if (injection_experiment::enabled()) {
+            diagnostics = {{"kind", "solver"},
+                           {"scheme", injection_experiment::names[injection_experiment::scheme]},
+                           {"solver_key", std::to_string(reinterpret_cast<std::uintptr_t>(output.u.data()))},
+                           {"extension_used", injection_experiment::scheme == 0},
+                           {"n_bus", n_bus_},
+                           {"original_rows", y_bus.row_indptr_lu()},
+                           {"original_cols", y_bus.col_indices_lu()},
+                           {"missing_pairs", nlohmann::json::array()},
+                           {"variances", nlohmann::json::array()}};
+        }
         output.bus_uncertainty.resize(n_bus_);
         double const variance_normalization = measured_values.variance_normalization();
 
@@ -688,8 +774,35 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
         // required by a closed bus neighborhood. Structural zeros leave the matrix unchanged while making those
         // inverse blocks available to the selected-inverse sweep.
         prepare_matrix(y_bus, measured_values);
-        UncertaintyMatrix uncertainty_matrix{y_bus.row_indptr_lu(), y_bus.col_indices_lu(), y_bus.row_indptr(),
-                                             y_bus.col_indices(), data_gain_};
+        UncertaintyMatrix uncertainty_matrix{y_bus.row_indptr_lu(),
+                                             y_bus.col_indices_lu(),
+                                             y_bus.row_indptr(),
+                                             y_bus.col_indices(),
+                                             data_gain_,
+                                             injection_experiment::scheme == 0};
+        if constexpr (is_symmetric_v<sym>) {
+            if (injection_experiment::enabled()) {
+                diagnostics["normalization"] = variance_normalization;
+                for (Idx bus = 0; bus != n_bus_; ++bus) {
+                    diagnostics["U"].push_back(complex_json(output.u[bus]));
+                    for (Idx idx = y_bus.row_indptr()[bus]; idx != y_bus.row_indptr()[bus + 1]; ++idx) {
+                        diagnostics["Y"].push_back(
+                            {bus, y_bus.col_indices()[idx], complex_json(y_bus.admittance()[idx])});
+                    }
+                    if (n_bus_ <= 16) {
+                        for (Idx idx = y_bus.row_indptr_lu()[bus]; idx != y_bus.row_indptr_lu()[bus + 1]; ++idx) {
+                            nlohmann::json block = nlohmann::json::array();
+                            for (Idx r = 0; r != 2; ++r) {
+                                for (Idx c = 0; c != 2; ++c) {
+                                    block.push_back(complex_json(data_gain_[idx](r, c)));
+                                }
+                            }
+                            diagnostics["gain"].push_back({bus, y_bus.col_indices_lu()[idx], block});
+                        }
+                    }
+                }
+            }
+        }
         uncertainty_matrix.solver.prefactorize(uncertainty_matrix.data, uncertainty_matrix.permutation);
 
         // Without an angle measurement, IL reports every phase relative to the slack phase-a angle. Preserve
@@ -699,7 +812,22 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
 
         uncertainty_matrix.solver.inplace_selective_inverse_with_prefactorized_matrix(uncertainty_matrix.data,
                                                                                       uncertainty_matrix.permutation);
-        calculate_bus_injection_uncertainty(y_bus, uncertainty_matrix, variance_normalization, output);
+        if constexpr (is_symmetric_v<sym>) {
+            if (injection_experiment::enabled()) {
+                for (Idx bus = 0; bus != n_bus_; ++bus) {
+                    for (Idx idx = uncertainty_matrix.structure.row_indptr[bus];
+                         idx != uncertainty_matrix.structure.row_indptr[bus + 1]; ++idx) {
+                        diagnostics["V"].push_back(
+                            {bus, uncertainty_matrix.structure.col_indices[idx],
+                             complex_json(variance_normalization * uncertainty_matrix.data[idx](0, 0))});
+                    }
+                }
+            }
+        }
+        calculate_bus_injection_uncertainty(y_bus, uncertainty_matrix, variance_normalization, output, diagnostics);
+        if (injection_experiment::enabled()) {
+            injection_experiment::write(diagnostics);
+        }
         calculate_voltage_uncertainty(uncertainty_matrix, variance_normalization, reference_covariance, output);
         calculate_branch_uncertainty(y_bus, uncertainty_matrix, variance_normalization, output);
     }
