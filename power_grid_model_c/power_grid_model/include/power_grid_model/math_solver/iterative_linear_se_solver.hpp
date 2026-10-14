@@ -517,39 +517,42 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                 double positive_correction = 0.0;
                 double bound_correction = 0.0;
                 Idx missing_count = 0;
-                for (auto const& [left, left_k] : k_blocks) {
-                    for (auto const& [right, right_k] : k_blocks) {
-                        if (left >= right || available(left, right)) {
-                            continue;
-                        }
-                        if (left == bus || right == bus) {
-                            throw SparseMatrixError{};
-                        }
-                        if constexpr (is_symmetric_v<sym>) {
-                            double const left_var =
-                                std::real(selected_voltage_covariance(uncertainty_matrix, left, left)(0, 0));
-                            double const right_var =
-                                std::real(selected_voltage_covariance(uncertainty_matrix, right, right)(0, 0));
-                            double const diagonal_tolerance = 1000.0 * std::numeric_limits<double>::epsilon() *
-                                                              std::max({1.0, std::abs(left_var), std::abs(right_var)});
-                            if (!std::isfinite(left_var) || !std::isfinite(right_var) ||
-                                left_var < -diagonal_tolerance || right_var < -diagonal_tolerance) {
+                if (injection_experiment::enabled() || injection_experiment::scheme != 0) {
+                    for (auto const& [left, left_k] : k_blocks) {
+                        for (auto const& [right, right_k] : k_blocks) {
+                            if (left >= right || available(left, right)) {
+                                continue;
+                            }
+                            if (left == bus || right == bus) {
                                 throw SparseMatrixError{};
                             }
-                            double const marginal = std::sqrt(std::max(0.0, left_var) * std::max(0.0, right_var));
-                            auto const product = std::conj(left_k(0)) * right_k(0);
-                            positive_correction += variance_normalization * std::real(product) * marginal;
-                            bound_correction += variance_normalization * std::abs(product) * marginal;
-                            ++missing_count;
-                            if (injection_experiment::enabled()) {
-                                nlohmann::json pair{{"bus", bus}, {"j", left}, {"m", right}};
-                                if constexpr (injection_experiment::scheme == 0) {
-                                    auto const value =
-                                        variance_normalization *
-                                        selected_voltage_covariance(uncertainty_matrix, left, right)(0, 0);
-                                    pair["V"] = {value.real(), value.imag()};
+                            if constexpr (is_symmetric_v<sym>) {
+                                double const left_var =
+                                    std::real(selected_voltage_covariance(uncertainty_matrix, left, left)(0, 0));
+                                double const right_var =
+                                    std::real(selected_voltage_covariance(uncertainty_matrix, right, right)(0, 0));
+                                double const diagonal_tolerance =
+                                    1000.0 * std::numeric_limits<double>::epsilon() *
+                                    std::max({1.0, std::abs(left_var), std::abs(right_var)});
+                                if (!std::isfinite(left_var) || !std::isfinite(right_var) ||
+                                    left_var < -diagonal_tolerance || right_var < -diagonal_tolerance) {
+                                    throw SparseMatrixError{};
                                 }
-                                diagnostics["missing_pairs"].push_back(pair);
+                                double const marginal = std::sqrt(std::max(0.0, left_var) * std::max(0.0, right_var));
+                                auto const product = std::conj(left_k(0)) * right_k(0);
+                                positive_correction += variance_normalization * std::real(product) * marginal;
+                                bound_correction += variance_normalization * std::abs(product) * marginal;
+                                ++missing_count;
+                                if (injection_experiment::enabled()) {
+                                    nlohmann::json pair{{"bus", bus}, {"j", left}, {"m", right}};
+                                    if constexpr (injection_experiment::scheme == 0) {
+                                        auto const value =
+                                            variance_normalization *
+                                            selected_voltage_covariance(uncertainty_matrix, left, right)(0, 0);
+                                        pair["V"] = {value.real(), value.imag()};
+                                    }
+                                    diagnostics["missing_pairs"].push_back(pair);
+                                }
                             }
                         }
                     }
