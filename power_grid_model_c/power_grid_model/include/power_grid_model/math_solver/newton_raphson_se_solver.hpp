@@ -8,6 +8,7 @@
 
 #include "block_matrix.hpp"
 #include "common_solver_functions.hpp"
+#include "injection_experiment.hpp"
 #include "measured_values.hpp"
 #include "observability.hpp"
 #include "sparse_lu_solver.hpp"
@@ -1030,6 +1031,146 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         }
     }
 
+    // Experimental replacements act on corrected physical voltage blocks, never on raw augmented entries.
+    // All available original-pattern blocks are retained. Each quantity gets its own missing-pair correction.
+    void experimental_injection_uncertainty(YBus<sym> const& y_bus, UncertaintyMatrix const& matrix,
+                                            UncertaintyContext const& context, SolverOutput<sym>& output,
+                                            nlohmann::json& diagnostic)
+        requires(is_symmetric_v<sym>)
+    {
+        using injection_experiment::real_matrix;
+        auto available = [&](Idx row, Idx col) {
+            auto const& cols = y_bus.col_indices_lu();
+            return std::binary_search(cols.begin() + y_bus.row_indptr_lu()[row],
+                                      cols.begin() + y_bus.row_indptr_lu()[row + 1], col);
+        };
+        std::vector<Eigen::Matrix2d> transforms(n_bus_), roots(n_bus_);
+        for (Idx bus = 0; bus < n_bus_; ++bus) {
+            auto const u = output.u[bus];
+            transforms[bus] << -u.imag(), std::cos(std::arg(u)), u.real(), std::sin(std::arg(u));
+        }
+        auto rectangular = [&](Idx row, Idx col) -> Eigen::Matrix2d {
+            return transforms[row] * reported_state_covariance(matrix, row, col, context) * transforms[col].transpose();
+        };
+        for (Idx bus = 0; bus < n_bus_; ++bus) {
+            auto const root = injection_experiment::principal_root(rectangular(bus, bus));
+            roots[bus] = root.value;
+            if (injection_experiment::enabled()) {
+                diagnostic["roots"].push_back({{"bus", bus},
+                                               {"eigenvalues", real_matrix(root.eigenvalues)},
+                                               {"tolerance", root.tolerance},
+                                               {"clipped", root.clipped},
+                                               {"L", real_matrix(root.value)}});
+                diagnostic["T"].push_back(real_matrix(transforms[bus]));
+                for (Idx idx = matrix.structure.row_indptr[bus]; idx < matrix.structure.row_indptr[bus + 1]; ++idx) {
+                    Idx const col = matrix.structure.col_indices[idx];
+                    diagnostic["raw_C"].push_back({bus, col, real_matrix(raw_state_covariance(matrix, bus, col))});
+                    diagnostic["C"].push_back(
+                        {bus, col, real_matrix(reported_state_covariance(matrix, bus, col, context))});
+                    diagnostic["R"].push_back({bus, col, real_matrix(rectangular(bus, col))});
+                }
+            }
+        }
+        for (Idx bus = 0; bus < n_bus_; ++bus) {
+            DoubleComplex current{};
+            for (Idx idx = y_bus.row_indptr()[bus]; idx < y_bus.row_indptr()[bus + 1]; ++idx) {
+                current += y_bus.admittance()[idx] * output.u[y_bus.col_indices()[idx]];
+            }
+            std::vector<std::pair<Idx, Eigen::Matrix2d>> jacobians;
+            std::array<std::vector<SparseStateVector>, 2> polar_rhs;
+            for (Idx idx = y_bus.row_indptr()[bus]; idx < y_bus.row_indptr()[bus + 1]; ++idx) {
+                Idx const col = y_bus.col_indices()[idx];
+                auto const a = col == bus ? std::conj(current) : DoubleComplex{};
+                auto const b = output.u[bus] * std::conj(y_bus.admittance()[idx]);
+                auto const dx = a + b;
+                auto const dy = 1.0i * (a - b);
+                Eigen::Matrix2d h;
+                h << dx.real(), dy.real(), dx.imag(), dy.imag();
+                jacobians.emplace_back(col, h);
+                // Independently retain the pre-existing polar derivative for validation.
+                auto const du = voltage_jacobian(col, output);
+                ComplexStateJacobian ds = output.u[bus] * (y_bus.admittance()[idx] * du).conjugate();
+                if (col == bus) {
+                    ds += std::conj(current) * du;
+                }
+                Eigen::Matrix2d hp;
+                hp.row(0) = ds.real();
+                hp.row(1) = ds.imag();
+                for (int q = 0; q < 2; ++q) {
+                    polar_rhs[q].emplace_back(col, hp.row(q).transpose());
+                }
+                if (injection_experiment::enabled()) {
+                    diagnostic["H"].push_back({bus, col, real_matrix(h)});
+                    diagnostic["H_polar"].push_back({bus, col, real_matrix(hp)});
+                }
+            }
+            Eigen::Vector2d zero = Eigen::Vector2d::Zero(), actual = zero, positive = zero, bound = zero, scale = zero;
+            Idx missing{};
+            for (auto const& [j, hj] : jacobians) {
+                for (auto const& [m, hm] : jacobians) {
+                    if (available(j, m)) {
+                        Eigen::Vector2d const term = (hj * rectangular(j, m) * hm.transpose()).diagonal();
+                        zero += term;
+                        scale += term.cwiseAbs();
+                    } else if (j < m) {
+                        ++missing;
+                        positive += 2.0 * (hj * roots[j] * roots[m].transpose() * hm.transpose()).diagonal();
+                        for (int q = 0; q < 2; ++q) {
+                            bound(q) += 2.0 * (hj.row(q) * roots[j]).norm() * (hm.row(q) * roots[m]).norm();
+                        }
+                        if constexpr (injection_experiment::scheme == 0) {
+                            actual += 2.0 * (hj * rectangular(j, m) * hm.transpose()).diagonal();
+                        }
+                        if (injection_experiment::enabled()) {
+                            diagnostic["missing_pairs"].push_back({{"bus", bus}, {"j", j}, {"m", m}});
+                        }
+                    }
+                }
+            }
+            Eigen::Vector2d variance = zero;
+            if constexpr (injection_experiment::scheme == 0) {
+                variance += actual;
+            }
+            if constexpr (injection_experiment::scheme == 2) {
+                variance += positive;
+                scale += positive.cwiseAbs();
+            }
+            if constexpr (injection_experiment::scheme == 3) {
+                variance += bound;
+                scale += bound;
+            }
+            Eigen::Vector2d const rectangular_variance = variance;
+            // Preserve baseline Full output and its roundoff scale exactly.
+            if constexpr (injection_experiment::scheme == 0) {
+                for (int q = 0; q < 2; ++q) {
+                    auto const value = covariance_quadratic_form(polar_rhs[q], matrix, context);
+                    variance(q) = value.first;
+                    scale(q) = value.second;
+                }
+            } else {
+                output.bus_uncertainty[bus].p_sigma = variance_to_sigma(variance(0), scale(0));
+                output.bus_uncertainty[bus].q_sigma = variance_to_sigma(variance(1), scale(1));
+            }
+            if (injection_experiment::enabled()) {
+                diagnostic["variances"].push_back({{"bus", bus},
+                                                   {"phase", 0},
+                                                   {"P", variance(0)},
+                                                   {"Q", variance(1)},
+                                                   {"P_rect", rectangular_variance(0)},
+                                                   {"Q_rect", rectangular_variance(1)},
+                                                   {"scale_P", scale(0)},
+                                                   {"scale_Q", scale(1)},
+                                                   {"missing_pair_count", missing},
+                                                   {"D_positive_P", positive(0)},
+                                                   {"D_positive_Q", positive(1)},
+                                                   {"D_actual_P", actual(0)},
+                                                   {"D_actual_Q", actual(1)},
+                                                   {"B_P", bound(0)},
+                                                   {"B_Q", bound(1)}});
+            }
+        }
+    }
+
     void calculate_voltage_uncertainty(UncertaintyMatrix const& uncertainty_matrix, UncertaintyContext const& context,
                                        SolverOutput<sym>& output) {
         for (Idx bus = 0; bus != n_bus_; ++bus) {
@@ -1134,24 +1275,126 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
 
     void calculate_state_estimation_uncertainty(YBus<sym> const& y_bus, MeasuredValues<sym> const& measured_values,
                                                 SolverOutput<sym>& output) {
-        // The iteration factors precede its final accepted update. Rebuild and factor the augmented Gauss-Newton
-        // matrix at the returned state, without numerical pivot perturbation, before propagating its covariance.
+        if constexpr (!is_symmetric_v<sym> && injection_experiment::scheme != 0) {
+            throw std::runtime_error{"Injection experiment supports symmetric NRSE only"};
+        }
+        // Reassemble at the final accepted Newton state, before every covariance solve and selected inversion.
         prepare_matrix_and_rhs(y_bus, measured_values, output.u);
-        UncertaintyMatrix uncertainty_matrix{y_bus.row_indptr_lu(), y_bus.col_indices_lu(), y_bus.row_indptr(),
-                                             y_bus.col_indices(), data_gain_};
+        nlohmann::json diagnostic;
+        using injection_experiment::real_matrix;
+        if constexpr (is_symmetric_v<sym>) {
+            if (injection_experiment::enabled()) {
+                diagnostic = {{"kind", "solver"},
+                              {"solver", "nrse"},
+                              {"covariance_model", "real_polar_corrected"},
+                              {"scheme", injection_experiment::names[injection_experiment::scheme]},
+                              {"solver_key", std::to_string(reinterpret_cast<std::uintptr_t>(output.u.data()))},
+                              {"extension_used", injection_experiment::scheme == 0},
+                              {"n_bus", n_bus_},
+                              {"original_rows", y_bus.row_indptr_lu()},
+                              {"original_cols", y_bus.col_indices_lu()},
+                              {"normalization", measured_values.variance_normalization()},
+                              {"has_angle", measured_values.has_angle()},
+                              {"reference_bus", math_topo_.get().slack_bus},
+                              {"missing_pairs", nlohmann::json::array()},
+                              {"variances", nlohmann::json::array()}};
+                for (Idx bus = 0; bus < n_bus_; ++bus) {
+                    diagnostic["U"].push_back({output.u[bus].real(), output.u[bus].imag()});
+                    for (Idx idx = y_bus.row_indptr()[bus]; idx < y_bus.row_indptr()[bus + 1]; ++idx) {
+                        auto const y = y_bus.admittance()[idx];
+                        diagnostic["Y"].push_back({bus, y_bus.col_indices()[idx], {y.real(), y.imag()}});
+                    }
+                    if (n_bus_ <= 16) {
+                        for (Idx idx = y_bus.row_indptr_lu()[bus]; idx < y_bus.row_indptr_lu()[bus + 1]; ++idx) {
+                            diagnostic["gain"].push_back(
+                                {bus, y_bus.col_indices_lu()[idx], real_matrix(data_gain_[idx].matrix())});
+                        }
+                    }
+                }
+            }
+        }
+        UncertaintyMatrix uncertainty_matrix{y_bus.row_indptr_lu(),
+                                             y_bus.col_indices_lu(),
+                                             y_bus.row_indptr(),
+                                             y_bus.col_indices(),
+                                             data_gain_,
+                                             injection_experiment::scheme == 0};
         uncertainty_matrix.solver.prefactorize(uncertainty_matrix.data, uncertainty_matrix.permutation);
-
         output.bus_uncertainty.resize(n_bus_);
         UncertaintyContext context;
         context.variance_normalization = measured_values.variance_normalization();
         context.virtual_angle_solutions =
             calculate_virtual_angle_solutions(measured_values, context.virtual_angle_weight, uncertainty_matrix);
         context.reference_covariance = calculate_reference_covariance(context, uncertainty_matrix);
-
-        // The selected-inverse sweep is destructive, so it follows every solve with the fresh factors.
+        if constexpr (is_symmetric_v<sym>) {
+            if (injection_experiment::enabled()) {
+                diagnostic["virtual_angle_weight"] = context.virtual_angle_weight;
+                diagnostic["virtual_angle_solutions"] = nlohmann::json::array();
+                diagnostic["reference_covariance"] = nlohmann::json::array();
+                for (auto const& solution : context.virtual_angle_solutions[0]) {
+                    diagnostic["virtual_angle_solutions"].push_back(real_matrix(state_vector(solution)));
+                }
+                for (auto const& covariance : context.reference_covariance) {
+                    diagnostic["reference_covariance"].push_back(real_matrix(covariance));
+                }
+                if constexpr (injection_experiment::scheme == 0) {
+                    if (n_bus_ <= 16) {
+                        // Diagnostic-only complete inverse columns, independent of the selected-inverse sweep.
+                        for (Idx col = 0; col < n_bus_; ++col) {
+                            std::vector<Eigen::Matrix2d> blocks(n_bus_);
+                            for (int q = 0; q < 2; ++q) {
+                                std::vector<NRSERhs<sym>> rhs(n_bus_), solution(n_bus_);
+                                rhs[col](q, 0) = 1.0;
+                                uncertainty_matrix.solver.solve_with_prefactorized_matrix(
+                                    uncertainty_matrix.data, uncertainty_matrix.permutation, rhs, solution);
+                                for (Idx row = 0; row < n_bus_; ++row) {
+                                    blocks[row].col(q) = state_vector(solution[row]);
+                                }
+                            }
+                            for (Idx row = 0; row < n_bus_; ++row) {
+                                diagnostic["dense_raw_C"].push_back({row, col, real_matrix(blocks[row])});
+                                if (context.has_virtual_angles()) {
+                                    blocks[row] -= context.virtual_angle_weight *
+                                                   state_vector(context.virtual_angle_solutions[0][row]) *
+                                                   state_vector(context.virtual_angle_solutions[0][col]).transpose();
+                                }
+                                blocks[row] *= context.variance_normalization;
+                                if (context.uses_angle_reference()) {
+                                    Eigen::Vector2d const direction{1.0, 0.0};
+                                    blocks[row] -= context.reference_covariance[row] * direction.transpose();
+                                    blocks[row] -= direction * context.reference_covariance[col].transpose();
+                                    blocks[row] += context.reference_covariance[math_topo_.get().slack_bus](0) *
+                                                   direction * direction.transpose();
+                                }
+                                diagnostic["dense_C"].push_back({row, col, real_matrix(blocks[row])});
+                                auto transform = [&](Idx bus) {
+                                    auto const u = output.u[bus];
+                                    Eigen::Matrix2d t;
+                                    t << -u.imag(), std::cos(std::arg(u)), u.real(), std::sin(std::arg(u));
+                                    return t;
+                                };
+                                diagnostic["dense_R"].push_back(
+                                    {row, col, real_matrix(transform(row) * blocks[row] * transform(col).transpose())});
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Selected inversion is destructive and must follow virtual-angle and reference-column solves.
         uncertainty_matrix.solver.inplace_selective_inverse_with_prefactorized_matrix(uncertainty_matrix.data,
                                                                                       uncertainty_matrix.permutation);
-        calculate_bus_injection_uncertainty(y_bus, uncertainty_matrix, context, output);
+        if constexpr (injection_experiment::scheme == 0) {
+            calculate_bus_injection_uncertainty(y_bus, uncertainty_matrix, context, output);
+        }
+        if constexpr (is_symmetric_v<sym>) {
+            if (injection_experiment::enabled() || injection_experiment::scheme != 0) {
+                experimental_injection_uncertainty(y_bus, uncertainty_matrix, context, output, diagnostic);
+            }
+            if (injection_experiment::enabled()) {
+                injection_experiment::write(diagnostic);
+            }
+        }
         calculate_voltage_uncertainty(uncertainty_matrix, context, output);
         calculate_branch_uncertainty(y_bus, uncertainty_matrix, context, output);
     }

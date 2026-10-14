@@ -761,6 +761,8 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
         auto complex_json = [](DoubleComplex value) { return nlohmann::json::array({value.real(), value.imag()}); };
         if (injection_experiment::enabled()) {
             diagnostics = {{"kind", "solver"},
+                           {"solver", "ilse"},
+                           {"covariance_model", "proper_complex"},
                            {"scheme", injection_experiment::names[injection_experiment::scheme]},
                            {"solver_key", std::to_string(reinterpret_cast<std::uintptr_t>(output.u.data()))},
                            {"extension_used", injection_experiment::scheme == 0},

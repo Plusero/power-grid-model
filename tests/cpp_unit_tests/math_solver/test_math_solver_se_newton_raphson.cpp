@@ -339,3 +339,27 @@ TEST_CASE("Asymmetric Newton-Raphson SE uncertainty matches local estimator sens
     }
 }
 } // namespace power_grid_model::math_solver
+
+TEST_CASE("NRSE experiment principal marginal root supports singular and roundoff covariances") {
+    using power_grid_model::injection_experiment::principal_root;
+    Eigen::Matrix2d covariance;
+    covariance << 4.0, 1.0, 1.0, 2.0;
+    auto root = principal_root(covariance);
+    CHECK((root.value * root.value - covariance).norm() < 1e-13);
+    CHECK((root.value - root.value.transpose()).norm() < 1e-14);
+    CHECK(root.clipped == 0);
+    Eigen::Matrix2d rotation;
+    rotation << std::cos(0.7), -std::sin(0.7), std::sin(0.7), std::cos(0.7);
+    CHECK((principal_root(rotation * covariance * rotation.transpose()).value -
+           rotation * root.value * rotation.transpose())
+              .norm() < 1e-13);
+    covariance << 1.0, 1.0, 1.0, 1.0;
+    CHECK((principal_root(covariance).value * principal_root(covariance).value - covariance).norm() < 1e-13);
+    CHECK(principal_root(Eigen::Matrix2d::Zero()).value.norm() == 0.0);
+    covariance << -1e-15, 0.0, 0.0, 1.0;
+    CHECK(principal_root(covariance).clipped == 1);
+    covariance(0, 0) = -1e-3;
+    CHECK_THROWS_AS(principal_root(covariance), std::runtime_error);
+    covariance(0, 0) = std::numeric_limits<double>::infinity();
+    CHECK_THROWS_AS(principal_root(covariance), std::runtime_error);
+}
