@@ -15,6 +15,7 @@ add_executable(
     "test_observability.cpp"
     "test_measured_values.cpp"
     "test_y_bus.cpp"
+    "test_injection_means.cpp"
 )
 
 target_link_libraries(

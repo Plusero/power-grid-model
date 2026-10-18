@@ -9,6 +9,7 @@
 #include "block_matrix.hpp"
 #include "common_solver_functions.hpp"
 #include "injection_experiment.hpp"
+#include "injection_means.hpp"
 #include "measured_values.hpp"
 #include "observability.hpp"
 #include "sparse_lu_solver.hpp"
@@ -1052,6 +1053,21 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         auto rectangular = [&](Idx row, Idx col) -> Eigen::Matrix2d {
             return transforms[row] * reported_state_covariance(matrix, row, col, context) * transforms[col].transpose();
         };
+        using Means = injection_experiment::CovarianceMeans<double, 2>;
+        std::optional<Means> means;
+        if constexpr (injection_experiment::scheme >= 4) {
+            means.emplace(n_bus_, y_bus.row_indptr_lu(), y_bus.col_indices_lu(), math_topo_.get().branch_bus_idx,
+                          rectangular);
+        }
+        if (injection_experiment::enabled()) {
+            std::set<std::pair<Idx, Idx>> edges;
+            for (auto const& branch : math_topo_.get().branch_bus_idx) {
+                if (branch[0] >= 0 && branch[1] >= 0 && branch[0] != branch[1]) {
+                    edges.insert(std::minmax(branch[0], branch[1]));
+                }
+            }
+            diagnostic["physical_edges"] = edges;
+        }
         for (Idx bus = 0; bus < n_bus_; ++bus) {
             auto const root = injection_experiment::principal_root(rectangular(bus, bus));
             roots[bus] = root.value;
@@ -1104,7 +1120,8 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
                     diagnostic["H_polar"].push_back({bus, col, real_matrix(hp)});
                 }
             }
-            Eigen::Vector2d zero = Eigen::Vector2d::Zero(), actual = zero, positive = zero, bound = zero, scale = zero;
+            Eigen::Vector2d zero = Eigen::Vector2d::Zero(), actual = zero, positive = zero, bound = zero, scale = zero,
+                            mean = zero;
             Idx missing{};
             for (auto const& [j, hj] : jacobians) {
                 for (auto const& [m, hm] : jacobians) {
@@ -1113,7 +1130,15 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
                         zero += term;
                         scale += term.cwiseAbs();
                     } else if (j < m) {
+                        if (j == bus || m == bus || j == m) {
+                            throw SparseMatrixError{};
+                        }
                         ++missing;
+                        if constexpr (injection_experiment::scheme >= 4) {
+                            mean +=
+                                2.0 * (hj * means->estimate(j, m, injection_experiment::scheme).value * hm.transpose())
+                                          .diagonal();
+                        }
                         positive += 2.0 * (hj * roots[j] * roots[m].transpose() * hm.transpose()).diagonal();
                         for (int q = 0; q < 2; ++q) {
                             bound(q) += 2.0 * (hj.row(q) * roots[j]).norm() * (hm.row(q) * roots[m]).norm();
@@ -1139,6 +1164,11 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
                 variance += bound;
                 scale += bound;
             }
+            if constexpr (injection_experiment::scheme >= 4) {
+                variance += mean;
+                scale += mean.cwiseAbs();
+            }
+            Eigen::Vector2d const correction = (variance - zero).eval();
             Eigen::Vector2d const rectangular_variance = variance;
             // Preserve baseline Full output and its roundoff scale exactly.
             if constexpr (injection_experiment::scheme == 0) {
@@ -1161,12 +1191,19 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
                                                    {"scale_P", scale(0)},
                                                    {"scale_Q", scale(1)},
                                                    {"missing_pair_count", missing},
+                                                   {"D_scheme_P", correction(0)},
+                                                   {"D_scheme_Q", correction(1)},
                                                    {"D_positive_P", positive(0)},
                                                    {"D_positive_Q", positive(1)},
                                                    {"D_actual_P", actual(0)},
                                                    {"D_actual_Q", actual(1)},
                                                    {"B_P", bound(0)},
                                                    {"B_Q", bound(1)}});
+            }
+        }
+        if constexpr (injection_experiment::scheme >= 4) {
+            if (injection_experiment::enabled()) {
+                diagnostic["averaging"] = means->diagnostics();
             }
         }
     }

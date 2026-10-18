@@ -9,6 +9,7 @@
 #include "block_matrix.hpp"
 #include "common_solver_functions.hpp"
 #include "injection_experiment.hpp"
+#include "injection_means.hpp"
 #include "measured_values.hpp"
 #include "observability.hpp"
 #include "sparse_lu_solver.hpp"
@@ -486,6 +487,23 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
     void calculate_bus_injection_uncertainty(YBus<sym> const& y_bus, UncertaintyMatrix const& uncertainty_matrix,
                                              double variance_normalization, SolverOutput<sym>& output,
                                              nlohmann::json& diagnostics) {
+        using Means = injection_experiment::CovarianceMeans<DoubleComplex, 1>;
+        std::optional<Means> means;
+        if constexpr (is_symmetric_v<sym> && injection_experiment::scheme >= 4) {
+            means.emplace(n_bus_, y_bus.row_indptr_lu(), y_bus.col_indices_lu(), math_topo_.get().branch_bus_idx,
+                          [&](Idx j, Idx m) -> Means::Block {
+                              return variance_normalization * selected_voltage_covariance(uncertainty_matrix, j, m);
+                          });
+        }
+        if (injection_experiment::enabled()) {
+            std::set<std::pair<Idx, Idx>> edges;
+            for (auto const& branch : math_topo_.get().branch_bus_idx) {
+                if (branch[0] >= 0 && branch[1] >= 0 && branch[0] != branch[1]) {
+                    edges.insert(std::minmax(branch[0], branch[1]));
+                }
+            }
+            diagnostics["physical_edges"] = edges;
+        }
         for (Idx bus = 0; bus != n_bus_; ++bus) {
             PhaseVector current = PhaseVector::Zero();
             for (Idx idx = y_bus.row_indptr()[bus]; idx != y_bus.row_indptr()[bus + 1]; ++idx) {
@@ -515,6 +533,7 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                     return std::binary_search(first, last, col);
                 };
                 double positive_correction = 0.0;
+                double mean_correction = 0.0;
                 double bound_correction = 0.0;
                 Idx missing_count = 0;
                 if (injection_experiment::enabled() || injection_experiment::scheme != 0) {
@@ -542,6 +561,11 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                                 auto const product = std::conj(left_k(0)) * right_k(0);
                                 positive_correction += variance_normalization * std::real(product) * marginal;
                                 bound_correction += variance_normalization * std::abs(product) * marginal;
+                                if constexpr (injection_experiment::scheme >= 4) {
+                                    mean_correction += std::real(
+                                        product *
+                                        means->estimate(left, right, injection_experiment::scheme).value(0, 0));
+                                }
                                 ++missing_count;
                                 if (injection_experiment::enabled()) {
                                     nlohmann::json pair{{"bus", bus}, {"j", left}, {"m", right}};
@@ -582,6 +606,7 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                 double const pseudo_covariance = 2.0 * std::real(h_v_kt);
                 double const correction = injection_experiment::scheme == 2   ? positive_correction
                                           : injection_experiment::scheme == 3 ? bound_correction
+                                          : injection_experiment::scheme >= 4 ? mean_correction
                                                                               : 0.0;
                 double const p_variance = 0.5 * variance_normalization * (covariance + pseudo_covariance) + correction;
                 double const q_variance = 0.5 * variance_normalization * (covariance - pseudo_covariance) + correction;
@@ -595,10 +620,16 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                                                         {"scale", scale},
                                                         {"missing_pair_count", missing_count},
                                                         {"D_positive", positive_correction},
+                                                        {"D_scheme", correction},
                                                         {"B", bound_correction}});
                 }
                 set_phase_value(output.bus_uncertainty[bus].p_sigma, phase, variance_to_sigma(p_variance, scale));
                 set_phase_value(output.bus_uncertainty[bus].q_sigma, phase, variance_to_sigma(q_variance, scale));
+            }
+        }
+        if constexpr (is_symmetric_v<sym> && injection_experiment::scheme >= 4) {
+            if (injection_experiment::enabled()) {
+                diagnostics["averaging"] = means->diagnostics();
             }
         }
     }

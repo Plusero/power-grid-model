@@ -20,9 +20,17 @@ set(PGM_INJECTION_SCHEME
 )
 set_property(
     CACHE PGM_INJECTION_SCHEME
-    PROPERTY STRINGS full zero positive bound
+    PROPERTY STRINGS full zero positive bound mean_global mean_local mean_path
 )
-set(_injection_schemes full zero positive bound)
+set(_injection_schemes
+    full
+    zero
+    positive
+    bound
+    mean_global
+    mean_local
+    mean_path
+)
 list(FIND _injection_schemes "${PGM_INJECTION_SCHEME}" _injection_scheme_index)
 if(_injection_scheme_index LESS 0)
     message(FATAL_ERROR "Unknown PGM_INJECTION_SCHEME")

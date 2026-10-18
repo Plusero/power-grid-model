@@ -17,8 +17,8 @@
 #endif
 namespace power_grid_model::injection_experiment {
 inline constexpr int scheme = PGM_INJECTION_SCHEME;
-static_assert(scheme >= 0 && scheme < 4);
-inline constexpr std::array names{"full", "zero", "positive", "bound"};
+static_assert(scheme >= 0 && scheme < 7);
+inline constexpr std::array names{"full", "zero", "positive", "bound", "mean_global", "mean_local", "mean_path"};
 inline bool enabled() { return std::getenv("PGM_INJECTION_DIAGNOSTICS") != nullptr; }
 // The symmetric principal root fixes the standardized rectangular axes and also supports singular marginals.
 struct PrincipalRoot {
