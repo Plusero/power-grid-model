@@ -534,6 +534,7 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                 };
                 double positive_correction = 0.0;
                 double mean_correction = 0.0;
+                double actual_correction = 0.0;
                 double bound_correction = 0.0;
                 Idx missing_count = 0;
                 if (injection_experiment::enabled() || injection_experiment::scheme != 0) {
@@ -574,6 +575,7 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                                             variance_normalization *
                                             selected_voltage_covariance(uncertainty_matrix, left, right)(0, 0);
                                         pair["V"] = {value.real(), value.imag()};
+                                        actual_correction += std::real(product * value);
                                     }
                                     diagnostics["missing_pairs"].push_back(pair);
                                 }
@@ -613,15 +615,16 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                 double const scale =
                     0.5 * variance_normalization * (std::abs(covariance) + std::abs(pseudo_covariance));
                 if (injection_experiment::enabled()) {
-                    diagnostics["variances"].push_back({{"bus", bus},
-                                                        {"phase", phase},
-                                                        {"P", p_variance},
-                                                        {"Q", q_variance},
-                                                        {"scale", scale},
-                                                        {"missing_pair_count", missing_count},
-                                                        {"D_positive", positive_correction},
-                                                        {"D_scheme", correction},
-                                                        {"B", bound_correction}});
+                    diagnostics["variances"].push_back(
+                        {{"bus", bus},
+                         {"phase", phase},
+                         {"P", p_variance},
+                         {"Q", q_variance},
+                         {"scale", scale},
+                         {"missing_pair_count", missing_count},
+                         {"D_positive", positive_correction},
+                         {"D_scheme", injection_experiment::scheme == 0 ? actual_correction : correction},
+                         {"B", bound_correction}});
                 }
                 set_phase_value(output.bus_uncertainty[bus].p_sigma, phase, variance_to_sigma(p_variance, scale));
                 set_phase_value(output.bus_uncertainty[bus].q_sigma, phase, variance_to_sigma(q_variance, scale));
