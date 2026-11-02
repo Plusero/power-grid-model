@@ -352,8 +352,8 @@ template <symmetry_tag sym> class MeasuredValues {
 
         // get direct bus injection measurement. It has infinite variance if there is no direct bus injection
         // measurement
-        PowerSensorCalcParam<sym> const direct_injection_measurement =
-            combine_measurements(input.measured_bus_injection, topo.power_sensors_per_bus.get_element_range(bus));
+        PowerSensorCalcParam<sym> const direct_injection_measurement = combine_injection_measurements(
+            input.measured_bus_injection, topo.power_sensors_per_bus.get_element_range(bus));
 
         // combine valid appliance_injection_measurement and direct_injection_measurement
         // three scenarios; check if we have valid injection measurement
@@ -368,16 +368,17 @@ template <symmetry_tag sym> class MeasuredValues {
                 // only direct injection
                 power_main_value_.push_back(direct_injection_measurement);
             }
-        } else if (uncertain_direct_injection || any_zero(appliance_injection_measurement.real_component.variance) ||
-                   any_zero(appliance_injection_measurement.imag_component.variance)) {
+        } else if (uncertain_direct_injection ||
+                   (is_symmetric_v<sym> && (any_zero(appliance_injection_measurement.real_component.variance) ||
+                                            any_zero(appliance_injection_measurement.imag_component.variance)))) {
             // only appliance injection if
             //    there is no direct injection measurement,
             //    or we have zero injection
             power_main_value_.push_back(appliance_injection_measurement);
         } else {
             // both valid, we combine again
-            power_main_value_.push_back(
-                combine_measurements(std::vector{direct_injection_measurement, appliance_injection_measurement}));
+            power_main_value_.push_back(combine_injection_measurements(
+                std::vector{direct_injection_measurement, appliance_injection_measurement}, IdxRange{2}));
         }
     }
 
@@ -472,6 +473,60 @@ template <symmetry_tag sym> class MeasuredValues {
         requires(!only_magnitude)
     static PowerSensorCalcParam<sym> combine_measurements(std::vector<PowerSensorCalcParam<sym>> const& data,
                                                           IdxRange const& sensors) {
+        return statistics::combine(sensors | std::views::transform([&data](Idx pos) -> auto& { return data[pos]; }));
+    }
+    // Injection constraints alone support exact coordinates; ordinary branch and
+    // shunt sensor aggregation retains its existing finite-positive policy.
+    static PowerSensorCalcParam<sym> combine_injection_measurements(std::vector<PowerSensorCalcParam<sym>> const& data,
+                                                                    IdxRange const& sensors) {
+        if constexpr (!is_symmetric_v<sym>) {
+            // Exact prepared injection coordinates must survive aggregation even
+            // when other phases/components remain noisy. The generic combiner
+            // rejects their infinite inverse weights as an unmeasured sensor.
+            bool const has_exact = std::ranges::any_of(sensors, [&data](Idx pos) {
+                return any_zero(data[pos].real_component.variance) || any_zero(data[pos].imag_component.variance);
+            });
+            if (has_exact) {
+                PowerSensorCalcParam<sym> result;
+                auto combine_axis = [&](auto member) {
+                    auto& output = result.*member;
+                    for (int phase = 0; phase != 3; ++phase) {
+                        bool exact = false;
+                        double inverse_variance = 0.0, weighted_value = 0.0;
+                        for (Idx const pos : sensors) {
+                            auto const& input = data[pos].*member;
+                            if (input.variance(phase) == 0.0) {
+                                if (exact && output.value(phase) != input.value(phase)) {
+                                    throw InvalidArguments{"Conflicting exact injection measurements"};
+                                }
+                                exact = true;
+                                output.value(phase) = input.value(phase);
+                            } else {
+                                inverse_variance += 1.0 / input.variance(phase);
+                                weighted_value += input.value(phase) / input.variance(phase);
+                            }
+                        }
+                        if (exact) {
+                            output.variance(phase) = 0.0;
+                        } else if (std::isnormal(inverse_variance)) {
+                            output.value(phase) = weighted_value / inverse_variance;
+                            output.variance(phase) = 1.0 / inverse_variance;
+                        } else {
+                            output.value(phase) = weighted_value;
+                            output.variance(phase) = std::numeric_limits<double>::infinity();
+                        }
+                    }
+                };
+                combine_axis(&PowerSensorCalcParam<sym>::real_component);
+                combine_axis(&PowerSensorCalcParam<sym>::imag_component);
+                // Keep the inherited whole-measurement missingness rule.
+                if (is_inf(result.real_component.variance) || is_inf(result.imag_component.variance)) {
+                    result.real_component.variance = RealValue<sym>{std::numeric_limits<double>::infinity()};
+                    result.imag_component.variance = RealValue<sym>{std::numeric_limits<double>::infinity()};
+                }
+                return result;
+            }
+        }
         return statistics::combine(sensors | std::views::transform([&data](Idx pos) -> auto& { return data[pos]; }));
     }
     template <bool only_magnitude = false>

@@ -8,6 +8,7 @@ add_executable(
     "test_math_solver_pf_newton_raphson.cpp"
     "test_math_solver_se_newton_raphson.cpp"
     "test_math_solver_se_iterative_linear.cpp"
+    "test_math_solver_se_asym_estimator.cpp"
     "test_math_solver_pf_iterative_current.cpp"
     "test_math_solver_pf_linear.cpp"
     "test_math_solver_sc.cpp"

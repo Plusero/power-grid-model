@@ -113,6 +113,8 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
     static constexpr auto is_NRSE_solver = true; // for testing purposes only
 
   private:
+    friend struct NRSEAsymTestAccess;
+
     enum class Order : IntS { row_major = 0, column_major = 1 };
 
     struct NRSEVoltageState {
@@ -470,7 +472,7 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
         auto const hm_ui_ui_ys = hm_complex_form(-ys, u_state.ui_ui_conj);
         auto const nl_ui_ui_ys = dot(hm_ui_ui_ys, u_state.abs_ui_inv);
         auto const f_x_complex = sum_row(hm_ui_ui_ys);
-        auto const f_x_complex_abs_ui_inv = sum_row(nl_ui_ui_ys);
+        auto const f_x_complex_abs_ui_inv = dot(u_state.abs_ui_inv, f_x_complex);
 
         auto jac_block = calculate_jacobian(hm_ui_ui_ys, nl_ui_ui_ys);
         jac_block += jacobian_diagonal_component(f_x_complex_abs_ui_inv, f_x_complex);
@@ -539,11 +541,11 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
                                                   auto const& u_state, Order const order,
                                                   CurrentSensorCalcParam<sym> const& current_sensor) {
         auto const hm_u_chi_u_chi_y_xi_xi = hm_complex_form(y_xi_xi, u_state.u_chi_u_chi_conj(order));
-        auto const hm_hat_u_chi_u_chi_y_xi_xi = dot(hm_u_chi_u_chi_y_xi_xi, u_state.abs_u_chi_inv(order));
+        auto const hm_hat_u_chi_u_chi_y_xi_xi = dot(u_state.abs_u_chi_inv(order), hm_u_chi_u_chi_y_xi_xi);
         auto const nl_hat_u_chi_u_chi_y_xi_xi = dot(hm_hat_u_chi_u_chi_y_xi_xi, u_state.abs_u_chi_inv(order));
 
         auto const hm_u_chi_u_psi_y_xi_mu = hm_complex_form(y_xi_mu, u_state.u_chi_u_psi_conj(order));
-        auto const hm_hat_u_chi_u_psi_y_xi_mu = dot(hm_u_chi_u_psi_y_xi_mu, u_state.abs_u_chi_inv(order));
+        auto const hm_hat_u_chi_u_psi_y_xi_mu = dot(u_state.abs_u_chi_inv(order), hm_u_chi_u_psi_y_xi_mu);
         auto const nl_hat_u_chi_u_psi_y_xi_mu = dot(hm_hat_u_chi_u_psi_y_xi_mu, u_state.abs_u_psi_inv(order));
 
         auto const f_x_complex = sum_row(hm_hat_u_chi_u_chi_y_xi_xi + hm_hat_u_chi_u_psi_y_xi_mu);
@@ -836,12 +838,23 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
             estimated_result.theta() += estimated_delta.theta() - RealValue<sym>{angle_offset};
             estimated_result.v() += estimated_delta.v();
             if (measured_values.has_bus_injection(bus)) {
-                if (all_zero(measured_values.bus_injection(bus).real_component.variance)) {
-                    estimated_result.phi_p() += estimated_delta.phi_p();
-                }
-                if (all_zero(measured_values.bus_injection(bus).imag_component.variance)) {
-                    estimated_result.phi_q() += estimated_delta.phi_q();
-                }
+                auto accumulate_exact = [](auto&& multiplier, auto const& delta, auto const& variance) {
+                    if constexpr (is_symmetric_v<sym>) {
+                        if (variance == 0.0) {
+                            multiplier += delta;
+                        }
+                    } else {
+                        for (int phase = 0; phase != 3; ++phase) {
+                            if (variance(phase) == 0.0) {
+                                multiplier(phase) += delta(phase);
+                            }
+                        }
+                    }
+                };
+                accumulate_exact(estimated_result.phi_p(), estimated_delta.phi_p(),
+                                 measured_values.bus_injection(bus).real_component.variance);
+                accumulate_exact(estimated_result.phi_q(), estimated_delta.phi_q(),
+                                 measured_values.bus_injection(bus).imag_component.variance);
             }
 
             auto const old_u = u[bus];
