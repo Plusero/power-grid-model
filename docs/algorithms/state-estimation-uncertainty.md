@@ -15,8 +15,14 @@ calculations.
 
 ```{note}
 This page describes the calculation inside the math solver.
-Users reach it through the [uncertainty observers](../user_manual/components.md#uncertainty-observers).
+Users reach it through the uncertainty observers; the
+[public observer workflow](../user_manual/uncertainty-observers.md) describes component selection, units, updates,
+batches and the executable Python example.
 ```
+
+The formulas below hold for symmetric and asymmetric calculations.
+The [asymmetric extension](asymmetric-state-estimation-uncertainty.md) describes coupled phase blocks, phase bases and
+the slack-phase-a reference.
 
 After the estimate has converged, the calculation takes three steps:
 

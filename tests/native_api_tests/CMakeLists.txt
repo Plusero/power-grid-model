@@ -9,6 +9,7 @@ set(PROJECT_SOURCES
     "test_api_logger.cpp"
     "test_api_model.cpp"
     "test_api_observer.cpp"
+    "test_api_observer_end_to_end.cpp"
     "test_api_model_update.cpp"
     "test_api_serialization.cpp"
     "test_api_validation.cpp"
