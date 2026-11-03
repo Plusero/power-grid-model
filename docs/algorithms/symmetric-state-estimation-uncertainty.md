@@ -18,6 +18,10 @@ that fails a numerical check of the uncertainty calculation does not discard
 the estimate: the estimate is returned and every requested uncertainty is
 reported invalid.
 Voltage, branch and nodal-injection requests are supported for both symmetries.
+This document uses scalar symmetric coordinates; the
+[asymmetric extension](asymmetric-state-estimation-uncertainty.md) describes
+coupled phase blocks, phase bases and the slack-phase-a reference. The public
+observer interface supports both symmetries.
 
 ## Prepared model and variance normalization
 
@@ -352,3 +356,6 @@ complete dense augmented references, physical fallback references, cancellation,
 extreme scales and exact/noisy-zero counterexamples. The separate integrated
 gates exercise full solvers and quantify approximation discrepancies
 independently from exact algebra.
+
+The [public observer workflow](../user_manual/uncertainty-observers.md) describes
+component selection, units, updates, batches and the executable Python example.
