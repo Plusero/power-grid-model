@@ -92,6 +92,8 @@ template <symmetry_tag sym> class MeasuredValues {
     // if the obj is not measured, it is undefined behaviour to call this function
     // use checker first
 
+    double variance_normalization() const { return variance_normalization_; }
+
     constexpr double voltage_var(Idx bus) const { return voltage_main_value_[idx_voltage_[bus]].variance; }
     constexpr auto const& voltage(Idx bus) const { return voltage_main_value_[idx_voltage_[bus]].value; }
     constexpr auto const& bus_injection(Idx bus) const {
@@ -549,11 +551,13 @@ template <symmetry_tag sym> class MeasuredValues {
     // p and q variances are combined (see also https://en.wikipedia.org/wiki/Complex_random_variable)
     // scale the smallest variance
     // to one in the gain matrix, the biggest weighting factor is then one
+    double variance_normalization_ = 1.0;
+
     void normalize_variance() {
         double min_var = std::numeric_limits<double>::infinity();
         auto const unconstrained_min = [&min_var](double v) {
             // only non-zero variance is considered
-            if (v != 0.0) {
+            if (std::isfinite(v) && v > 0.0) {
                 min_var = std::min(min_var, v);
             }
         };
@@ -582,15 +586,24 @@ template <symmetry_tag sym> class MeasuredValues {
         }
 
         // scale
-        auto const inv_norm_var = 1.0 / min_var;
-        std::ranges::for_each(voltage_main_value_, [inv_norm_var](auto& x) { x.variance *= inv_norm_var; });
-        std::ranges::for_each(power_main_value_, [inv_norm_var](auto& x) {
-            x.real_component.variance *= inv_norm_var;
-            x.imag_component.variance *= inv_norm_var;
+        variance_normalization_ = std::isfinite(min_var) ? min_var : 1.0;
+        auto const normalization = variance_normalization_;
+        auto const reciprocal = 1.0 / normalization;
+        auto const normalize = [normalization, reciprocal](auto& variance) {
+            if (std::isfinite(reciprocal)) {
+                variance *= reciprocal;
+            } else {
+                variance /= normalization;
+            }
+        };
+        std::ranges::for_each(voltage_main_value_, [normalize](auto& x) { normalize(x.variance); });
+        std::ranges::for_each(power_main_value_, [normalize](auto& x) {
+            normalize(x.real_component.variance);
+            normalize(x.imag_component.variance);
         });
-        std::ranges::for_each(current_main_value_, [inv_norm_var](auto& x) {
-            x.measurement.real_component.variance *= inv_norm_var;
-            x.measurement.imag_component.variance *= inv_norm_var;
+        std::ranges::for_each(current_main_value_, [normalize](auto& x) {
+            normalize(x.measurement.real_component.variance);
+            normalize(x.measurement.imag_component.variance);
         });
     }
 

@@ -274,6 +274,22 @@ struct sparse_lu_entry_trait<Tensor, RHSVector, XVector> {
     using BlockPermArray = std::vector<BlockPerm>;
 };
 
+namespace detail {
+
+// Find the index in col_indices within [begin_idx, end_idx); the column must exist.
+inline Idx find_sparse_entry(std::span<Idx const> col_indices, Idx col, Idx begin_idx, Idx end_idx) {
+    constexpr Idx linear_search_threshold = 16;
+    auto const first = col_indices.begin() + begin_idx;
+    auto const last = col_indices.begin() + end_idx;
+    auto const found = end_idx - begin_idx < linear_search_threshold ? std::find(first, last, col)
+                                                                     : std::lower_bound(first, last, col);
+    assert(found != last);
+    assert(*found == col);
+    return narrow_cast<Idx>(std::distance(col_indices.begin(), found));
+}
+
+} // namespace detail
+
 template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
   public:
     using entry_trait = sparse_lu_entry_trait<Tensor, RHSVector, XVector>;
@@ -316,6 +332,9 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
             solve_once(data, block_perm_array, rhs, x);
         }
     }
+
+    // whether the last factorization perturbed a pivot
+    bool has_pivot_perturbation() const { return has_pivot_perturbation_; }
 
     // Compute Takahashi dependency blocks over the solver's stored sparse pattern
     // row_indptr_/col_indices_. This pattern includes fill-ins and can be larger
@@ -495,8 +514,6 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
     }
 
   private:
-    static constexpr Idx linear_search_threshold = 16;
-
     Idx size_;
     Idx nnz_; // number of non zeroes (in block)
     std::span<Idx const> row_indptr_;
@@ -672,6 +689,7 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
     }
 
     // Update selected inverse blocks for pivot p: column below p, row right of p, and diagonal.
+    // Each sum runs over later neighbors N_p = {k > p : (p,k) is in the filled LU pattern}.
     // Trailing Z_ij blocks with i,j > p are already available from the reverse pivot sweep.
     void update_selective_inverse_pivot_row_and_column(std::vector<Tensor>& data, Idx pivot_row_col) const
         requires is_block
@@ -698,7 +716,7 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
         // Column below pivot: replace L_kp with Z_kp = -(sum_m Z_km * L_mp) * L_p^-1.
         for (Idx k_offset = 0; k_offset < n_off_diagonal; ++k_offset) {
             Idx const z_row = col_indices_[u_start + k_offset];
-            Tensor sum = Tensor::Zero();
+            Tensor sum{Tensor::Zero()};
             Idx z_idx = l_indices[k_offset];
             for (Idx m_offset = 0; m_offset < n_off_diagonal; ++m_offset) {
                 Idx const z_col = col_indices_[u_start + m_offset];
@@ -711,7 +729,7 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
         // Row right of pivot: replace U_pj with Z_pj = -U_p^-1 * sum_m U_pm * Z_mj.
         for (Idx j_offset = 0; j_offset < n_off_diagonal; ++j_offset) {
             Idx const z_col = col_indices_[u_start + j_offset];
-            Tensor sum = Tensor::Zero();
+            Tensor sum{Tensor::Zero()};
             for (Idx m_offset = 0; m_offset < n_off_diagonal; ++m_offset) {
                 Idx const z_row = col_indices_[u_start + m_offset];
                 Idx const z_idx = find_entry(z_row, z_col, l_indices[m_offset] + 1, row_indptr_[z_row + 1]);
@@ -721,7 +739,7 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
         }
 
         // Diagonal last: Z_pp = (L_p * U_p)^-1 - U_p^-1 * sum_m U_pm * Z_mp.
-        Tensor sum = Tensor::Zero();
+        Tensor sum{Tensor::Zero()};
         for (Idx m_offset = 0; m_offset < n_off_diagonal; ++m_offset) {
             sum += dot(u_row[m_offset], data[l_indices[m_offset]]);
         }
@@ -738,13 +756,7 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
         assert(row_indptr_[row] <= begin_idx);
         assert(begin_idx < end_idx);
         assert(end_idx <= row_indptr_[row + 1]);
-        auto const first = col_indices_.begin() + begin_idx;
-        auto const last = col_indices_.begin() + end_idx;
-        auto const found = end_idx - begin_idx < linear_search_threshold ? std::find(first, last, col)
-                                                                         : std::lower_bound(first, last, col);
-        assert(found != last);
-        assert(*found == col);
-        return narrow_cast<Idx>(std::distance(col_indices_.begin(), found));
+        return detail::find_sparse_entry(col_indices_, col, begin_idx, end_idx);
     }
 
     // Compute U_pivot^-1 * block, with U stored in the upper triangle of the packed pivot block.

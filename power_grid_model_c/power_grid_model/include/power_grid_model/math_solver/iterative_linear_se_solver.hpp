@@ -11,6 +11,9 @@
 #include "measured_values.hpp"
 #include "observability.hpp"
 #include "sparse_lu_solver.hpp"
+#include "state_estimation_uq.hpp"
+#include "state_estimation_uq_entry_point.hpp"
+#include "state_estimation_uq_workspace.hpp"
 #include "y_bus.hpp"
 
 #include "../calculation_parameters.hpp"
@@ -27,6 +30,7 @@
 #include <complex>
 #include <functional>
 #include <limits>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -84,6 +88,7 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
   private:
     // block size 2 for symmetric, 6 for asym
     static constexpr Idx bsr_block_size_ = is_symmetric_v<sym> ? 2 : 6;
+    using UQWorkspace = state_estimation_uq::SparseCovarianceWorkspace<ILSEGainBlock<sym>, ILSEUnknown<sym>>;
 
   public:
     IterativeLinearSESolver(YBus<sym> const& y_bus, MathModelTopology const& topo)
@@ -95,7 +100,10 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
           perm_(y_bus.size()) {}
 
     SolverOutput<sym> run_state_estimation(YBus<sym> const& y_bus, StateEstimationInput<sym> const& input,
-                                           double err_tol, Idx max_iter, Logger& log) {
+                                           double err_tol, Idx max_iter, Logger& log,
+                                           StateEstimationUQContext<sym>* uq = nullptr) {
+        state_estimation_uq::validate_context(uq, n_bus_);
+        std::optional<StateEstimationUQResult<sym>> uq_result;
         // prepare
         Timer main_timer;
         Timer sub_timer;
@@ -145,12 +153,22 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
         sub_timer = Timer{log, LogEvent::calculate_math_result};
         detail::calculate_se_result<sym>(y_bus, measured_values, output);
 
+        if (uq && !uq->request.empty()) {
+            // ILSE: V_ij = alpha * (Abar^-1)_ij[U,U]; reuse the state-independent LU factors.
+            typename UQWorkspace::Factorization const factorization{sparse_solver_, perm_};
+            uq_result = state_estimation_uq::calculate_results<UQWorkspace>(
+                y_bus, data_gain_, measured_values, output.u, uq->request, -1, 0.0, &factorization);
+        }
+
         // Manually stop timers to avoid "Max number of iterations" to be included in the timing.
         sub_timer.stop();
         main_timer.stop();
 
         log.log(LogEvent::max_num_iter, num_iter);
 
+        if (uq_result) {
+            uq->result = std::move(*uq_result);
+        }
         return output;
     }
 
