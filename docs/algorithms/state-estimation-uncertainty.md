@@ -14,8 +14,8 @@ This is available for [iterative linear](se-algorithms.md#iterative-linear-state
 calculations.
 
 ```{note}
-For now, this is an internal interface of the math solver.
-It is not exposed in the C API or the Python API.
+This page describes the calculation inside the math solver.
+Users reach it through the [uncertainty observers](../user_manual/components.md#uncertainty-observers).
 ```
 
 After the estimate has converged, the calculation takes three steps:

@@ -53,6 +53,15 @@ enum class MeasuredTerminalType : IntS {
     node = 9
 };
 
+enum class ObservedTerminalType : IntS {
+    branch_from = 0,
+    branch_to = 1,
+    branch3_1 = 6,
+    branch3_2 = 7,
+    branch3_3 = 8,
+    node_injection = 9
+};
+
 enum class ComponentType : IntS {
     node = 0,
     branch = 1,
@@ -69,6 +78,7 @@ enum class ComponentType : IntS {
     transformer_tap_regulator = 12,
     voltage_regulator = 13,
     link = 14,
+    observer = 15,
     test = -128 // any stub or mock may use this. do not use this in production
 };
 

@@ -244,6 +244,15 @@ struct CurrentSensorUpdate {
 using SymCurrentSensorUpdate = CurrentSensorUpdate<symmetric_t>;
 using AsymCurrentSensorUpdate = CurrentSensorUpdate<asymmetric_t>;
 
+struct ObserverUpdate {
+    ID id{na_IntID};  // ID of the object
+    IntS status{na_IntS};  // whether the observer is enabled
+
+    // implicit conversions to BaseUpdate
+    operator BaseUpdate&() { return reinterpret_cast<BaseUpdate&>(*this); }
+    operator BaseUpdate const&() const { return reinterpret_cast<BaseUpdate const&>(*this); }
+};
+
 
 
 } // namespace power_grid_model

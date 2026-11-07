@@ -27,6 +27,14 @@ from power_grid_model._core.typing import ComponentAttributeMapping, ComponentAt
 from power_grid_model._core.utils import process_data_filter
 from power_grid_model.data_types import DenseBatchColumnarData
 
+_UNCERTAINTY_OBSERVER_TYPES = frozenset(
+    (
+        ComponentType.voltage_uncertainty_observer,
+        ComponentType.power_uncertainty_observer,
+        ComponentType.current_uncertainty_observer,
+    )
+)
+
 
 def get_output_type(*, calculation_type: CalculationType, symmetric: bool) -> DatasetType:
     """
@@ -170,6 +178,12 @@ def create_output_data(
     """
     processed_output_types = process_data_filter(output_type, output_component_types, list(all_component_count.keys()))
 
+    # An explicitly empty observer attribute selection creates no output buffer or UQ demand.
+    processed_output_types = {
+        component: attributes
+        for component, attributes in processed_output_types.items()
+        if not (component in _UNCERTAINTY_OBSERVER_TYPES and isinstance(attributes, (list, set)) and not attributes)
+    }
     all_component_count = {k: v for k, v in all_component_count.items() if k in processed_output_types}
 
     # create result dataset

@@ -229,6 +229,16 @@ struct get_attributes_list<CurrentSensorUpdate<sym_type>> {
     };
 };
 
+template<>
+struct get_attributes_list<ObserverUpdate> {
+    static constexpr std::array<MetaAttribute, 2> value{
+            // all attributes including base class
+            
+            meta_data_gen::get_meta_attribute<&ObserverUpdate::id>(offsetof(ObserverUpdate, id), "id"),
+            meta_data_gen::get_meta_attribute<&ObserverUpdate::status>(offsetof(ObserverUpdate, status), "status"),
+    };
+};
+
 
 
 

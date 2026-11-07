@@ -67,6 +67,24 @@
         {
           "names": ["fault"],
           "class_name": "FaultInput"
+        },
+        {
+          "names": [
+            "voltage_uncertainty_observer"
+          ],
+          "class_name": "VoltageUncertaintyObserverInput"
+        },
+        {
+          "names": [
+            "power_uncertainty_observer"
+          ],
+          "class_name": "PowerUncertaintyObserverInput"
+        },
+        {
+          "names": [
+            "current_uncertainty_observer"
+          ],
+          "class_name": "CurrentUncertaintyObserverInput"
         }
       ]
     },
@@ -113,6 +131,24 @@
         {
           "names": ["fault"],
           "class_name": "FaultOutput"
+        },
+        {
+          "names": [
+            "voltage_uncertainty_observer"
+          ],
+          "class_name": "VoltageUncertaintyObserverOutput"
+        },
+        {
+          "names": [
+            "power_uncertainty_observer"
+          ],
+          "class_name": "PowerUncertaintyObserverOutput"
+        },
+        {
+          "names": [
+            "current_uncertainty_observer"
+          ],
+          "class_name": "CurrentUncertaintyObserverOutput"
         }
       ]
     },
@@ -179,6 +215,24 @@
         {
           "names": ["fault"],
           "class_name": "FaultUpdate"
+        },
+        {
+          "names": [
+            "voltage_uncertainty_observer"
+          ],
+          "class_name": "ObserverUpdate"
+        },
+        {
+          "names": [
+            "power_uncertainty_observer"
+          ],
+          "class_name": "ObserverUpdate"
+        },
+        {
+          "names": [
+            "current_uncertainty_observer"
+          ],
+          "class_name": "ObserverUpdate"
         }
       ]
     },
@@ -217,6 +271,24 @@
         {
           "names": ["fault"],
           "class_name": "FaultShortCircuitOutput"
+        },
+        {
+          "names": [
+            "voltage_uncertainty_observer"
+          ],
+          "class_name": "BaseOutput"
+        },
+        {
+          "names": [
+            "power_uncertainty_observer"
+          ],
+          "class_name": "BaseOutput"
+        },
+        {
+          "names": [
+            "current_uncertainty_observer"
+          ],
+          "class_name": "BaseOutput"
         }
       ]
     }

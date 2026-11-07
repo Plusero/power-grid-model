@@ -109,6 +109,11 @@ template <symmetry_tag sym> struct StateEstimationUQResult {
     std::vector<InjectionUQResult<sym>> injection;
     std::vector<UQPairDiagnostic> pairs;
 };
+// Request and result of one island, owned by the caller of the math solver.
+template <symmetry_tag sym> struct StateEstimationUQWork {
+    StateEstimationUQRequest request;
+    StateEstimationUQResult<sym> result;
+};
 
 // References to the caller's request and result for one island, passed through run_state_estimation().
 // The caller owns both objects and keeps them alive during the call.

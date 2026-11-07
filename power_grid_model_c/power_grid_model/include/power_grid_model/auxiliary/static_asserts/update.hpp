@@ -263,6 +263,13 @@ static_assert(std::alignment_of_v<AsymCurrentSensorUpdate> >= std::alignment_of_
 static_assert(std::same_as<decltype(AsymCurrentSensorUpdate::id), decltype(BaseUpdate::id)>);
 static_assert(offsetof(AsymCurrentSensorUpdate, id) == offsetof(BaseUpdate, id));
 
+// static asserts for ObserverUpdate
+static_assert(std::is_standard_layout_v<ObserverUpdate>);
+// static asserts for conversion of ObserverUpdate to BaseUpdate
+static_assert(std::alignment_of_v<ObserverUpdate> >= std::alignment_of_v<BaseUpdate>);
+static_assert(std::same_as<decltype(ObserverUpdate::id), decltype(BaseUpdate::id)>);
+static_assert(offsetof(ObserverUpdate, id) == offsetof(BaseUpdate, id));
+
 
 
 } // namespace power_grid_model::test

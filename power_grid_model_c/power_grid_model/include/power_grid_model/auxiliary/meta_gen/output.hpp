@@ -276,6 +276,78 @@ struct get_attributes_list<CurrentSensorOutput<sym_type>> {
     };
 };
 
+template<>
+struct get_attributes_list<VoltageUncertaintyObserverOutput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+            
+            meta_data_gen::get_meta_attribute<&VoltageUncertaintyObserverOutput::id>(offsetof(VoltageUncertaintyObserverOutput, id), "id"),
+            meta_data_gen::get_meta_attribute<&VoltageUncertaintyObserverOutput::energized>(offsetof(VoltageUncertaintyObserverOutput, energized), "energized"),
+            meta_data_gen::get_meta_attribute<&VoltageUncertaintyObserverOutput::u_sigma>(offsetof(VoltageUncertaintyObserverOutput, u_sigma), "u_sigma"),
+            meta_data_gen::get_meta_attribute<&VoltageUncertaintyObserverOutput::u_angle_sigma>(offsetof(VoltageUncertaintyObserverOutput, u_angle_sigma), "u_angle_sigma"),
+    };
+};
+
+template<>
+struct get_attributes_list<PowerUncertaintyObserverOutput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+            
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverOutput::id>(offsetof(PowerUncertaintyObserverOutput, id), "id"),
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverOutput::energized>(offsetof(PowerUncertaintyObserverOutput, energized), "energized"),
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverOutput::p_sigma>(offsetof(PowerUncertaintyObserverOutput, p_sigma), "p_sigma"),
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverOutput::q_sigma>(offsetof(PowerUncertaintyObserverOutput, q_sigma), "q_sigma"),
+    };
+};
+
+template<>
+struct get_attributes_list<CurrentUncertaintyObserverOutput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+            
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverOutput::id>(offsetof(CurrentUncertaintyObserverOutput, id), "id"),
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverOutput::energized>(offsetof(CurrentUncertaintyObserverOutput, energized), "energized"),
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverOutput::i_sigma>(offsetof(CurrentUncertaintyObserverOutput, i_sigma), "i_sigma"),
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverOutput::i_angle_sigma>(offsetof(CurrentUncertaintyObserverOutput, i_angle_sigma), "i_angle_sigma"),
+    };
+};
+
+template<>
+struct get_attributes_list<AsymVoltageUncertaintyObserverOutput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+            
+            meta_data_gen::get_meta_attribute<&AsymVoltageUncertaintyObserverOutput::id>(offsetof(AsymVoltageUncertaintyObserverOutput, id), "id"),
+            meta_data_gen::get_meta_attribute<&AsymVoltageUncertaintyObserverOutput::energized>(offsetof(AsymVoltageUncertaintyObserverOutput, energized), "energized"),
+            meta_data_gen::get_meta_attribute<&AsymVoltageUncertaintyObserverOutput::u_sigma>(offsetof(AsymVoltageUncertaintyObserverOutput, u_sigma), "u_sigma"),
+            meta_data_gen::get_meta_attribute<&AsymVoltageUncertaintyObserverOutput::u_angle_sigma>(offsetof(AsymVoltageUncertaintyObserverOutput, u_angle_sigma), "u_angle_sigma"),
+    };
+};
+
+template<>
+struct get_attributes_list<AsymPowerUncertaintyObserverOutput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+            
+            meta_data_gen::get_meta_attribute<&AsymPowerUncertaintyObserverOutput::id>(offsetof(AsymPowerUncertaintyObserverOutput, id), "id"),
+            meta_data_gen::get_meta_attribute<&AsymPowerUncertaintyObserverOutput::energized>(offsetof(AsymPowerUncertaintyObserverOutput, energized), "energized"),
+            meta_data_gen::get_meta_attribute<&AsymPowerUncertaintyObserverOutput::p_sigma>(offsetof(AsymPowerUncertaintyObserverOutput, p_sigma), "p_sigma"),
+            meta_data_gen::get_meta_attribute<&AsymPowerUncertaintyObserverOutput::q_sigma>(offsetof(AsymPowerUncertaintyObserverOutput, q_sigma), "q_sigma"),
+    };
+};
+
+template<>
+struct get_attributes_list<AsymCurrentUncertaintyObserverOutput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+            
+            meta_data_gen::get_meta_attribute<&AsymCurrentUncertaintyObserverOutput::id>(offsetof(AsymCurrentUncertaintyObserverOutput, id), "id"),
+            meta_data_gen::get_meta_attribute<&AsymCurrentUncertaintyObserverOutput::energized>(offsetof(AsymCurrentUncertaintyObserverOutput, energized), "energized"),
+            meta_data_gen::get_meta_attribute<&AsymCurrentUncertaintyObserverOutput::i_sigma>(offsetof(AsymCurrentUncertaintyObserverOutput, i_sigma), "i_sigma"),
+            meta_data_gen::get_meta_attribute<&AsymCurrentUncertaintyObserverOutput::i_angle_sigma>(offsetof(AsymCurrentUncertaintyObserverOutput, i_angle_sigma), "i_angle_sigma"),
+    };
+};
+
 
 
 

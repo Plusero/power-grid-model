@@ -673,6 +673,58 @@ static_assert(offsetof(AsymCurrentSensorInput, angle_measurement_type) == offset
 static_assert(offsetof(AsymCurrentSensorInput, i_sigma) == offsetof(GenericCurrentSensorInput, i_sigma));
 static_assert(offsetof(AsymCurrentSensorInput, i_angle_sigma) == offsetof(GenericCurrentSensorInput, i_angle_sigma));
 
+// static asserts for ObserverInput
+static_assert(std::is_standard_layout_v<ObserverInput>);
+// static asserts for conversion of ObserverInput to BaseInput
+static_assert(std::alignment_of_v<ObserverInput> >= std::alignment_of_v<BaseInput>);
+static_assert(std::same_as<decltype(ObserverInput::id), decltype(BaseInput::id)>);
+static_assert(offsetof(ObserverInput, id) == offsetof(BaseInput, id));
+
+// static asserts for VoltageUncertaintyObserverInput
+static_assert(std::is_standard_layout_v<VoltageUncertaintyObserverInput>);
+// static asserts for conversion of VoltageUncertaintyObserverInput to BaseInput
+static_assert(std::alignment_of_v<VoltageUncertaintyObserverInput> >= std::alignment_of_v<ObserverInput>);
+static_assert(std::same_as<decltype(VoltageUncertaintyObserverInput::id), decltype(BaseInput::id)>);
+static_assert(offsetof(VoltageUncertaintyObserverInput, id) == offsetof(BaseInput, id));
+// static asserts for conversion of VoltageUncertaintyObserverInput to ObserverInput
+static_assert(std::alignment_of_v<VoltageUncertaintyObserverInput> >= std::alignment_of_v<ObserverInput>);
+static_assert(std::same_as<decltype(VoltageUncertaintyObserverInput::id), decltype(ObserverInput::id)>);
+static_assert(std::same_as<decltype(VoltageUncertaintyObserverInput::observed_object), decltype(ObserverInput::observed_object)>);
+static_assert(std::same_as<decltype(VoltageUncertaintyObserverInput::status), decltype(ObserverInput::status)>);
+static_assert(offsetof(VoltageUncertaintyObserverInput, id) == offsetof(ObserverInput, id));
+static_assert(offsetof(VoltageUncertaintyObserverInput, observed_object) == offsetof(ObserverInput, observed_object));
+static_assert(offsetof(VoltageUncertaintyObserverInput, status) == offsetof(ObserverInput, status));
+
+// static asserts for PowerUncertaintyObserverInput
+static_assert(std::is_standard_layout_v<PowerUncertaintyObserverInput>);
+// static asserts for conversion of PowerUncertaintyObserverInput to BaseInput
+static_assert(std::alignment_of_v<PowerUncertaintyObserverInput> >= std::alignment_of_v<ObserverInput>);
+static_assert(std::same_as<decltype(PowerUncertaintyObserverInput::id), decltype(BaseInput::id)>);
+static_assert(offsetof(PowerUncertaintyObserverInput, id) == offsetof(BaseInput, id));
+// static asserts for conversion of PowerUncertaintyObserverInput to ObserverInput
+static_assert(std::alignment_of_v<PowerUncertaintyObserverInput> >= std::alignment_of_v<ObserverInput>);
+static_assert(std::same_as<decltype(PowerUncertaintyObserverInput::id), decltype(ObserverInput::id)>);
+static_assert(std::same_as<decltype(PowerUncertaintyObserverInput::observed_object), decltype(ObserverInput::observed_object)>);
+static_assert(std::same_as<decltype(PowerUncertaintyObserverInput::status), decltype(ObserverInput::status)>);
+static_assert(offsetof(PowerUncertaintyObserverInput, id) == offsetof(ObserverInput, id));
+static_assert(offsetof(PowerUncertaintyObserverInput, observed_object) == offsetof(ObserverInput, observed_object));
+static_assert(offsetof(PowerUncertaintyObserverInput, status) == offsetof(ObserverInput, status));
+
+// static asserts for CurrentUncertaintyObserverInput
+static_assert(std::is_standard_layout_v<CurrentUncertaintyObserverInput>);
+// static asserts for conversion of CurrentUncertaintyObserverInput to BaseInput
+static_assert(std::alignment_of_v<CurrentUncertaintyObserverInput> >= std::alignment_of_v<ObserverInput>);
+static_assert(std::same_as<decltype(CurrentUncertaintyObserverInput::id), decltype(BaseInput::id)>);
+static_assert(offsetof(CurrentUncertaintyObserverInput, id) == offsetof(BaseInput, id));
+// static asserts for conversion of CurrentUncertaintyObserverInput to ObserverInput
+static_assert(std::alignment_of_v<CurrentUncertaintyObserverInput> >= std::alignment_of_v<ObserverInput>);
+static_assert(std::same_as<decltype(CurrentUncertaintyObserverInput::id), decltype(ObserverInput::id)>);
+static_assert(std::same_as<decltype(CurrentUncertaintyObserverInput::observed_object), decltype(ObserverInput::observed_object)>);
+static_assert(std::same_as<decltype(CurrentUncertaintyObserverInput::status), decltype(ObserverInput::status)>);
+static_assert(offsetof(CurrentUncertaintyObserverInput, id) == offsetof(ObserverInput, id));
+static_assert(offsetof(CurrentUncertaintyObserverInput, observed_object) == offsetof(ObserverInput, observed_object));
+static_assert(offsetof(CurrentUncertaintyObserverInput, status) == offsetof(ObserverInput, status));
+
 
 
 } // namespace power_grid_model::test

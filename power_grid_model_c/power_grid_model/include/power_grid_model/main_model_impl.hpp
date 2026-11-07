@@ -36,6 +36,7 @@
 #include "main_core/core_utils.hpp"
 #include "main_core/input.hpp"
 #include "main_core/main_model_type.hpp"
+#include "main_core/observer_uncertainty.hpp"
 #include "main_core/output.hpp"
 #include "main_core/topological_node_output.hpp"
 #include "main_core/topology.hpp"
@@ -200,6 +201,7 @@ class MainModelImpl {
         construction_complete_ = true;
 #endif // !NDEBUG
         state_.components.set_construction_complete();
+        main_core::validate_observer_targets(state_.components);
         // TODO(jguo): cleanup v2 node single link registration path
         has_node_injection_sensors_ = detect_node_injection_sensors();
         state_.comp_topo = std::make_shared<ComponentTopology const>(
@@ -280,15 +282,15 @@ class MainModelImpl {
         requires std::invocable<std::remove_cvref_t<PrepareInputFn>, Idx /*n_math_solvers*/> &&
                  std::ranges::range<std::invoke_result_t<PrepareInputFn, Idx /*n_math_solvers*/>> &&
                  std::invocable<
-                     std::remove_cvref_t<SolveFn>, MathSolverType&, YBus const&,
+                     std::remove_cvref_t<SolveFn>, Idx, MathSolverType&, YBus const&,
                      typename std::invoke_result_t<PrepareInputFn, Idx /*n_math_solvers*/>::const_reference> &&
                  solver_output_type<std::invoke_result_t<
-                     SolveFn, MathSolverType&, YBus const&,
+                     SolveFn, Idx, MathSolverType&, YBus const&,
                      typename std::invoke_result_t<PrepareInputFn, Idx /*n_math_solvers*/>::const_reference>>
 
     auto calculate_(PrepareInputFn prepare_input, SolveFn solve, Logger& logger) {
         using InputType = std::invoke_result_t<PrepareInputFn, Idx /*n_math_solvers*/>::const_reference;
-        using SolverOutputType = std::invoke_result_t<SolveFn, MathSolverType&, YBus const&, InputType>;
+        using SolverOutputType = std::invoke_result_t<SolveFn, Idx, MathSolverType&, YBus const&, InputType>;
         using sym = decode_symmetry_v<SolverOutputType>;
 
         assert(construction_complete_);
@@ -309,7 +311,7 @@ class MainModelImpl {
             std::vector<SolverOutputType> solver_output;
             solver_output.reserve(get_n_math_solvers<ModelType>(state_));
             for (Idx i = 0; i != get_n_math_solvers<ModelType>(state_); ++i) {
-                solver_output.emplace_back(solve_(solvers[i], y_bus_vec[i], input[i]));
+                solver_output.emplace_back(solve_(i, solvers[i], y_bus_vec[i], input[i]));
             }
             return solver_output;
         }();
@@ -317,21 +319,35 @@ class MainModelImpl {
 
     // Calculate with optimization, e.g., automatic tap changer
     template <calculation_type_tag calculation_type, symmetry_tag sym>
-    auto calculate_with_optimizer(Options const& options, bool cache_run, Logger& logger) {
-        auto const get_calculator = [this, &options, cache_run, &logger] {
+    auto calculate_with_optimizer(Options const& options, bool cache_run, Logger& logger,
+                                  main_core::observer_uncertainty::Scenario<sym>* observers) {
+        auto const get_calculator = [this, &options, cache_run, &logger, observers] {
             using Calc = Calculator<calculation_type, sym>;
 
             assert(options.optimizer_type == OptimizerType::no_optimization ||
                    (std::derived_from<calculation_type, power_flow_t>));
 
-            return [this, &mutable_comp_coup = state_.comp_coup, &options, cache_run,
-                    &logger](MainModelState const& state, CalculationMethod calculation_method) {
+            return [this, &mutable_comp_coup = state_.comp_coup, &options, cache_run, &logger,
+                    observers](MainModelState const& state, CalculationMethod calculation_method) {
                 (void)state; // to avoid unused-lambda-capture when in Release build
                 assert(&state == &state_);
 
-                return calculate_<MathSolverProxy<sym>, YBus<sym>>(
-                    Calc::preparer(state, mutable_comp_coup, options),
-                    Calc::solver(calculation_method, options, cache_run, logger), logger);
+                auto prepare = [this, preparer = Calc::preparer(state, mutable_comp_coup, options),
+                                observers](Idx count) {
+                    auto input = preparer(count);
+                    if constexpr (std::same_as<calculation_type, state_estimation_t>) {
+                        main_core::prepare_observer_uncertainty(state_, *observers, count);
+                    }
+                    return input;
+                };
+                auto solve = [&] {
+                    if constexpr (std::same_as<calculation_type, state_estimation_t>) {
+                        return Calc::solver(calculation_method, options, cache_run, logger, &observers->work);
+                    } else {
+                        return Calc::solver(calculation_method, options, cache_run, logger);
+                    }
+                }();
+                return calculate_<MathSolverProxy<sym>, YBus<sym>>(prepare, solve, logger);
             };
         };
 
@@ -352,6 +368,8 @@ class MainModelImpl {
     void calculate(Options options, bool cache_run, MutableDataset const& result_data, Logger& logger) {
         assert(construction_complete_);
 
+        main_core::observer_uncertainty::validate_output_mode(result_data, options);
+
         if (options.calculation_type == CalculationType::short_circuit) {
             auto const faults = state_.components.template citer<Fault>();
             auto const is_three_phase = std::ranges::all_of(
@@ -371,9 +389,10 @@ class MainModelImpl {
             [cache_run]<calculation_type_tag calculation_type, symmetry_tag sym>(
                 MainModelImpl& main_model_, Options const& options_, MutableDataset const& result_data_,
                 Logger& logger) {
-                main_model_.output_result(
-                    main_model_.calculate_with_optimizer<calculation_type, sym>(options_, cache_run, logger),
-                    result_data_, logger);
+                main_core::observer_uncertainty::Scenario<sym> observers{result_data_};
+                main_model_.output_result(main_model_.calculate_with_optimizer<calculation_type, sym>(
+                                              options_, cache_run, logger, &observers),
+                                          result_data_, logger, &observers);
             },
             *this, options, result_data, logger);
     }
@@ -446,20 +465,30 @@ class MainModelImpl {
   private:
     template <solver_output_type SolverOutputType>
     void output_result(MathOutput<std::vector<SolverOutputType>> math_output, MutableDataset const& result_data,
-                       Logger& logger) const {
+                       Logger& logger,
+                       main_core::observer_uncertainty::Scenario<decode_symmetry_v<SolverOutputType>> const* observers =
+                           nullptr) const {
         assert(!result_data.is_batch());
 
         Timer const t_output{logger, LogEvent::produce_output};
 
         main_core::solve_topological_nodes(state_, math_output);
 
-        auto const output_func = [this, &math_output, &result_data]<typename CT>() {
+        auto const output_func = [this, &math_output, &result_data, observers]<typename CT>() {
             result_data.for_each_component<typename output_type_getter<SolverOutputType>::type, CT>(
-                [this, &math_output](auto const& span) {
+                [this, &math_output, observers](auto const& span) {
                     if (std::empty(span)) {
                         return;
                     }
-                    main_core::output_result<CT>(state_, math_output, span);
+                    if constexpr (std::derived_from<CT, Observer>) {
+                        // validate_output_mode rejected observer output outside state estimation.
+                        if constexpr (steady_state_solver_output_type<SolverOutputType>) {
+                            assert(observers != nullptr);
+                            main_core::output_observer_uncertainty<CT>(state_, *observers, span);
+                        }
+                    } else {
+                        main_core::output_result<CT>(state_, math_output, span);
+                    }
                 });
         };
 

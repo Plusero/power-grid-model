@@ -487,6 +487,52 @@ struct get_attributes_list<CurrentSensorInput<sym_type>> {
     };
 };
 
+template<>
+struct get_attributes_list<ObserverInput> {
+    static constexpr std::array<MetaAttribute, 3> value{
+            // all attributes including base class
+            
+            meta_data_gen::get_meta_attribute<&ObserverInput::id>(offsetof(ObserverInput, id), "id"),
+            meta_data_gen::get_meta_attribute<&ObserverInput::observed_object>(offsetof(ObserverInput, observed_object), "observed_object"),
+            meta_data_gen::get_meta_attribute<&ObserverInput::status>(offsetof(ObserverInput, status), "status"),
+    };
+};
+
+template<>
+struct get_attributes_list<VoltageUncertaintyObserverInput> {
+    static constexpr std::array<MetaAttribute, 3> value{
+            // all attributes including base class
+            
+            meta_data_gen::get_meta_attribute<&VoltageUncertaintyObserverInput::id>(offsetof(VoltageUncertaintyObserverInput, id), "id"),
+            meta_data_gen::get_meta_attribute<&VoltageUncertaintyObserverInput::observed_object>(offsetof(VoltageUncertaintyObserverInput, observed_object), "observed_object"),
+            meta_data_gen::get_meta_attribute<&VoltageUncertaintyObserverInput::status>(offsetof(VoltageUncertaintyObserverInput, status), "status"),
+    };
+};
+
+template<>
+struct get_attributes_list<PowerUncertaintyObserverInput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+            
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverInput::id>(offsetof(PowerUncertaintyObserverInput, id), "id"),
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverInput::observed_object>(offsetof(PowerUncertaintyObserverInput, observed_object), "observed_object"),
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverInput::status>(offsetof(PowerUncertaintyObserverInput, status), "status"),
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverInput::observed_terminal_type>(offsetof(PowerUncertaintyObserverInput, observed_terminal_type), "observed_terminal_type"),
+    };
+};
+
+template<>
+struct get_attributes_list<CurrentUncertaintyObserverInput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+            
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverInput::id>(offsetof(CurrentUncertaintyObserverInput, id), "id"),
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverInput::observed_object>(offsetof(CurrentUncertaintyObserverInput, observed_object), "observed_object"),
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverInput::status>(offsetof(CurrentUncertaintyObserverInput, status), "status"),
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverInput::observed_terminal_type>(offsetof(CurrentUncertaintyObserverInput, observed_terminal_type), "observed_terminal_type"),
+    };
+};
+
 
 
 

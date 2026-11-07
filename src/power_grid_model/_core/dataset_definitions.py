@@ -78,6 +78,9 @@ class ComponentType(StrEnum, metaclass=_MetaEnum):
     sym_current_sensor = "sym_current_sensor"
     asym_current_sensor = "asym_current_sensor"
     fault = "fault"
+    voltage_uncertainty_observer = "voltage_uncertainty_observer"
+    power_uncertainty_observer = "power_uncertainty_observer"
+    current_uncertainty_observer = "current_uncertainty_observer"
 
     def __repr__(self):
         return self.value
@@ -153,6 +156,8 @@ class AttributeType(StrEnum, metaclass=_MetaEnum):
     node_1 = "node_1"
     node_2 = "node_2"
     node_3 = "node_3"
+    observed_object = "observed_object"
+    observed_terminal_type = "observed_terminal_type"
     p = "p"
     p0 = "p0"
     p0_zero_sequence = "p0_zero_sequence"
@@ -245,6 +250,7 @@ class AttributeType(StrEnum, metaclass=_MetaEnum):
     u_angle = "u_angle"
     u_angle_measured = "u_angle_measured"
     u_angle_residual = "u_angle_residual"
+    u_angle_sigma = "u_angle_sigma"
     u_band = "u_band"
     u_measured = "u_measured"
     u_pu = "u_pu"

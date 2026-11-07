@@ -14,6 +14,7 @@ from typing import Any, Literal, overload
 import numpy as np
 
 from power_grid_model._core.data_handling import (
+    _UNCERTAINTY_OBSERVER_TYPES,
     create_output_data,
     get_output_type,
     prepare_input_view,
@@ -231,6 +232,7 @@ class PowerGridModel:
                 ComponentType.sym_current_sensor,
                 ComponentType.asym_current_sensor,
                 ComponentType.fault,
+                *_UNCERTAINTY_OBSERVER_TYPES,
             ],
             CalculationType.state_estimation: [
                 ComponentType.fault,
@@ -246,6 +248,7 @@ class PowerGridModel:
                 ComponentType.asym_current_sensor,
                 ComponentType.transformer_tap_regulator,
                 ComponentType.voltage_regulator,
+                *_UNCERTAINTY_OBSERVER_TYPES,
             ],
         }.get(calculation_type, [])
 
@@ -263,6 +266,11 @@ class PowerGridModel:
         batch_size: int,
     ) -> Dataset:
         all_component_count = self._get_output_component_count(calculation_type=calculation_type)
+        if isinstance(output_component_types, (dict, list, set)):
+            # Keep explicit observer requests so native argument validation can reject unsupported modes.
+            for component in output_component_types:
+                if component in _UNCERTAINTY_OBSERVER_TYPES and component in self.all_component_count:
+                    all_component_count[ComponentType[component]] = self.all_component_count[component]
         return create_output_data(
             output_component_types=output_component_types,
             output_type=get_output_type(calculation_type=calculation_type, symmetric=symmetric),

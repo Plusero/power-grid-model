@@ -341,6 +341,26 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_input_fault_fault_phase;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_input_fault_fault_object;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_input_fault_r_f;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_input_fault_x_f;
+// component voltage_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_input_voltage_uncertainty_observer;
+// attributes of input voltage_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_input_voltage_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_input_voltage_uncertainty_observer_observed_object;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_input_voltage_uncertainty_observer_status;
+// component power_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_input_power_uncertainty_observer;
+// attributes of input power_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_input_power_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_input_power_uncertainty_observer_observed_object;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_input_power_uncertainty_observer_status;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_input_power_uncertainty_observer_observed_terminal_type;
+// component current_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_input_current_uncertainty_observer;
+// attributes of input current_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_input_current_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_input_current_uncertainty_observer_observed_object;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_input_current_uncertainty_observer_status;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_input_current_uncertainty_observer_observed_terminal_type;
 // dataset sym_output
 PGM_API extern PGM_MetaDataset const* const PGM_def_sym_output;
 // components of sym_output
@@ -564,6 +584,27 @@ PGM_API extern PGM_MetaComponent const* const PGM_def_sym_output_fault;
 // attributes of sym_output fault
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_fault_id;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_fault_energized;
+// component voltage_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_sym_output_voltage_uncertainty_observer;
+// attributes of sym_output voltage_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_voltage_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_voltage_uncertainty_observer_energized;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_voltage_uncertainty_observer_u_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_voltage_uncertainty_observer_u_angle_sigma;
+// component power_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_sym_output_power_uncertainty_observer;
+// attributes of sym_output power_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_power_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_power_uncertainty_observer_energized;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_power_uncertainty_observer_p_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_power_uncertainty_observer_q_sigma;
+// component current_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_sym_output_current_uncertainty_observer;
+// attributes of sym_output current_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_current_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_current_uncertainty_observer_energized;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_current_uncertainty_observer_i_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sym_output_current_uncertainty_observer_i_angle_sigma;
 // dataset asym_output
 PGM_API extern PGM_MetaDataset const* const PGM_def_asym_output;
 // components of asym_output
@@ -787,6 +828,27 @@ PGM_API extern PGM_MetaComponent const* const PGM_def_asym_output_fault;
 // attributes of asym_output fault
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_fault_id;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_fault_energized;
+// component voltage_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_asym_output_voltage_uncertainty_observer;
+// attributes of asym_output voltage_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_voltage_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_voltage_uncertainty_observer_energized;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_voltage_uncertainty_observer_u_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_voltage_uncertainty_observer_u_angle_sigma;
+// component power_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_asym_output_power_uncertainty_observer;
+// attributes of asym_output power_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_power_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_power_uncertainty_observer_energized;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_power_uncertainty_observer_p_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_power_uncertainty_observer_q_sigma;
+// component current_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_asym_output_current_uncertainty_observer;
+// attributes of asym_output current_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_current_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_current_uncertainty_observer_energized;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_current_uncertainty_observer_i_sigma;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_asym_output_current_uncertainty_observer_i_angle_sigma;
 // dataset update
 PGM_API extern PGM_MetaDataset const* const PGM_def_update;
 // components of update
@@ -945,6 +1007,21 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_update_fault_fault_phase;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_update_fault_fault_object;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_update_fault_r_f;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_update_fault_x_f;
+// component voltage_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_update_voltage_uncertainty_observer;
+// attributes of update voltage_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_update_voltage_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_update_voltage_uncertainty_observer_status;
+// component power_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_update_power_uncertainty_observer;
+// attributes of update power_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_update_power_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_update_power_uncertainty_observer_status;
+// component current_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_update_current_uncertainty_observer;
+// attributes of update current_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_update_current_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_update_current_uncertainty_observer_status;
 // dataset sc_output
 PGM_API extern PGM_MetaDataset const* const PGM_def_sc_output;
 // components of sc_output
@@ -1082,6 +1159,21 @@ PGM_API extern PGM_MetaAttribute const* const PGM_def_sc_output_fault_id;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sc_output_fault_energized;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sc_output_fault_i_f;
 PGM_API extern PGM_MetaAttribute const* const PGM_def_sc_output_fault_i_f_angle;
+// component voltage_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_sc_output_voltage_uncertainty_observer;
+// attributes of sc_output voltage_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sc_output_voltage_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sc_output_voltage_uncertainty_observer_energized;
+// component power_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_sc_output_power_uncertainty_observer;
+// attributes of sc_output power_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sc_output_power_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sc_output_power_uncertainty_observer_energized;
+// component current_uncertainty_observer
+PGM_API extern PGM_MetaComponent const* const PGM_def_sc_output_current_uncertainty_observer;
+// attributes of sc_output current_uncertainty_observer
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sc_output_current_uncertainty_observer_id;
+PGM_API extern PGM_MetaAttribute const* const PGM_def_sc_output_current_uncertainty_observer_energized;
 //
 
 #ifdef __cplusplus

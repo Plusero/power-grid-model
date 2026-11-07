@@ -212,6 +212,17 @@ class Branch3Side(IntEnum):
     side_3 = 2
 
 
+class ObservedTerminalType(IntEnum):
+    """Terminal or net node injection observed by an uncertainty observer."""
+
+    branch_from = 0
+    branch_to = 1
+    branch3_1 = 6
+    branch3_2 = 7
+    branch3_3 = 8
+    node_injection = 9
+
+
 class MeasuredTerminalType(IntEnum, metaclass=_DeprecationAwareEnumMeta):
     """The type of asset measured by a (power) sensor.
 

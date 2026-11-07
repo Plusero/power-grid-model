@@ -341,6 +341,60 @@ static_assert(std::same_as<decltype(AsymCurrentSensorOutput::energized), decltyp
 static_assert(offsetof(AsymCurrentSensorOutput, id) == offsetof(BaseOutput, id));
 static_assert(offsetof(AsymCurrentSensorOutput, energized) == offsetof(BaseOutput, energized));
 
+// static asserts for VoltageUncertaintyObserverOutput
+static_assert(std::is_standard_layout_v<VoltageUncertaintyObserverOutput>);
+// static asserts for conversion of VoltageUncertaintyObserverOutput to BaseOutput
+static_assert(std::alignment_of_v<VoltageUncertaintyObserverOutput> >= std::alignment_of_v<BaseOutput>);
+static_assert(std::same_as<decltype(VoltageUncertaintyObserverOutput::id), decltype(BaseOutput::id)>);
+static_assert(std::same_as<decltype(VoltageUncertaintyObserverOutput::energized), decltype(BaseOutput::energized)>);
+static_assert(offsetof(VoltageUncertaintyObserverOutput, id) == offsetof(BaseOutput, id));
+static_assert(offsetof(VoltageUncertaintyObserverOutput, energized) == offsetof(BaseOutput, energized));
+
+// static asserts for PowerUncertaintyObserverOutput
+static_assert(std::is_standard_layout_v<PowerUncertaintyObserverOutput>);
+// static asserts for conversion of PowerUncertaintyObserverOutput to BaseOutput
+static_assert(std::alignment_of_v<PowerUncertaintyObserverOutput> >= std::alignment_of_v<BaseOutput>);
+static_assert(std::same_as<decltype(PowerUncertaintyObserverOutput::id), decltype(BaseOutput::id)>);
+static_assert(std::same_as<decltype(PowerUncertaintyObserverOutput::energized), decltype(BaseOutput::energized)>);
+static_assert(offsetof(PowerUncertaintyObserverOutput, id) == offsetof(BaseOutput, id));
+static_assert(offsetof(PowerUncertaintyObserverOutput, energized) == offsetof(BaseOutput, energized));
+
+// static asserts for CurrentUncertaintyObserverOutput
+static_assert(std::is_standard_layout_v<CurrentUncertaintyObserverOutput>);
+// static asserts for conversion of CurrentUncertaintyObserverOutput to BaseOutput
+static_assert(std::alignment_of_v<CurrentUncertaintyObserverOutput> >= std::alignment_of_v<BaseOutput>);
+static_assert(std::same_as<decltype(CurrentUncertaintyObserverOutput::id), decltype(BaseOutput::id)>);
+static_assert(std::same_as<decltype(CurrentUncertaintyObserverOutput::energized), decltype(BaseOutput::energized)>);
+static_assert(offsetof(CurrentUncertaintyObserverOutput, id) == offsetof(BaseOutput, id));
+static_assert(offsetof(CurrentUncertaintyObserverOutput, energized) == offsetof(BaseOutput, energized));
+
+// static asserts for AsymVoltageUncertaintyObserverOutput
+static_assert(std::is_standard_layout_v<AsymVoltageUncertaintyObserverOutput>);
+// static asserts for conversion of AsymVoltageUncertaintyObserverOutput to BaseOutput
+static_assert(std::alignment_of_v<AsymVoltageUncertaintyObserverOutput> >= std::alignment_of_v<BaseOutput>);
+static_assert(std::same_as<decltype(AsymVoltageUncertaintyObserverOutput::id), decltype(BaseOutput::id)>);
+static_assert(std::same_as<decltype(AsymVoltageUncertaintyObserverOutput::energized), decltype(BaseOutput::energized)>);
+static_assert(offsetof(AsymVoltageUncertaintyObserverOutput, id) == offsetof(BaseOutput, id));
+static_assert(offsetof(AsymVoltageUncertaintyObserverOutput, energized) == offsetof(BaseOutput, energized));
+
+// static asserts for AsymPowerUncertaintyObserverOutput
+static_assert(std::is_standard_layout_v<AsymPowerUncertaintyObserverOutput>);
+// static asserts for conversion of AsymPowerUncertaintyObserverOutput to BaseOutput
+static_assert(std::alignment_of_v<AsymPowerUncertaintyObserverOutput> >= std::alignment_of_v<BaseOutput>);
+static_assert(std::same_as<decltype(AsymPowerUncertaintyObserverOutput::id), decltype(BaseOutput::id)>);
+static_assert(std::same_as<decltype(AsymPowerUncertaintyObserverOutput::energized), decltype(BaseOutput::energized)>);
+static_assert(offsetof(AsymPowerUncertaintyObserverOutput, id) == offsetof(BaseOutput, id));
+static_assert(offsetof(AsymPowerUncertaintyObserverOutput, energized) == offsetof(BaseOutput, energized));
+
+// static asserts for AsymCurrentUncertaintyObserverOutput
+static_assert(std::is_standard_layout_v<AsymCurrentUncertaintyObserverOutput>);
+// static asserts for conversion of AsymCurrentUncertaintyObserverOutput to BaseOutput
+static_assert(std::alignment_of_v<AsymCurrentUncertaintyObserverOutput> >= std::alignment_of_v<BaseOutput>);
+static_assert(std::same_as<decltype(AsymCurrentUncertaintyObserverOutput::id), decltype(BaseOutput::id)>);
+static_assert(std::same_as<decltype(AsymCurrentUncertaintyObserverOutput::energized), decltype(BaseOutput::energized)>);
+static_assert(offsetof(AsymCurrentUncertaintyObserverOutput, id) == offsetof(BaseOutput, id));
+static_assert(offsetof(AsymCurrentUncertaintyObserverOutput, energized) == offsetof(BaseOutput, energized));
+
 
 
 } // namespace power_grid_model::test

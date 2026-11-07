@@ -250,6 +250,17 @@
           "description": "measured current and current angle"
         }
       ]
+    },
+    {
+      "name": "ObserverUpdate",
+      "base": "BaseUpdate",
+      "attributes": [
+        {
+          "data_type": "IntS",
+          "names": "status",
+          "description": "whether the observer is enabled"
+        }
+      ]
     }
   ]
 }
