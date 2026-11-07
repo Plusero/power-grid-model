@@ -102,7 +102,7 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
     SolverOutput<sym> run_state_estimation(YBus<sym> const& y_bus, StateEstimationInput<sym> const& input,
                                            double err_tol, Idx max_iter, Logger& log,
                                            StateEstimationUQContext<sym>* uq = nullptr) {
-        state_estimation_uq::validate_context(uq, n_bus_);
+        state_estimation_uq::validate_context(uq, n_bus_, y_bus.math_topology().n_branch());
         std::optional<StateEstimationUQResult<sym>> uq_result;
         // prepare
         Timer main_timer;

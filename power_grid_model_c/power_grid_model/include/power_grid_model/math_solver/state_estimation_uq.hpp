@@ -63,8 +63,13 @@ template <symmetry_tag sym> struct VoltageUQResult {
     UQValue<sym> magnitude, angle;
 };
 
+template <symmetry_tag sym> struct BranchUQResult {
+    UQValue<sym> active_power, reactive_power, current_magnitude, current_angle;
+};
+
 template <symmetry_tag sym> struct StateEstimationUQResult {
     std::vector<VoltageUQResult<sym>> voltage;
+    std::vector<BranchUQResult<sym>> branch;
 };
 // Non-owning request/result context passed to run_state_estimation for one island.
 template <symmetry_tag sym> struct StateEstimationUQContext {
@@ -73,18 +78,24 @@ template <symmetry_tag sym> struct StateEstimationUQContext {
 };
 
 namespace state_estimation_uq {
-// Reject unsupported request categories and out-of-range bus indices before solving.
-template <symmetry_tag sym> void validate_context(StateEstimationUQContext<sym>* uq, Idx n_bus) {
+// Reject unsupported request categories and out-of-range indices before solving.
+template <symmetry_tag sym> void validate_context(StateEstimationUQContext<sym>* uq, Idx n_bus, Idx n_branch) {
     if (!uq) {
         return;
     }
     auto const& request = uq->request;
-    if (!request.branch.empty() || !request.injection.empty()) {
-        throw InvalidArguments{"Branch and injection uncertainty are not implemented"};
+    if (!request.injection.empty()) {
+        throw InvalidArguments{"Injection uncertainty is not implemented"};
     }
     for (auto const& item : request.voltage) {
         if (item.bus < 0 || item.bus >= n_bus) {
             throw InvalidArguments{"Invalid voltage uncertainty request"};
+        }
+    }
+    for (auto const& item : request.branch) {
+        if (item.branch < 0 || item.branch >= n_branch ||
+            (item.side != BranchSide::from && item.side != BranchSide::to)) {
+            throw InvalidArguments{"Invalid branch uncertainty request"};
         }
     }
 }

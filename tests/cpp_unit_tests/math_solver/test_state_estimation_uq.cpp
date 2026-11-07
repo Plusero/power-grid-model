@@ -272,6 +272,7 @@ void dense_workspace_reference(bool mesh, bool relative, Idx virtual_bus, double
                                                                 !relative, virtual_bus, weight};
     Dense const inverse = dense.fullPivLu().inverse();
     CHECK((dense * inverse - Dense::Identity(4 * size, 4 * size)).norm() < 1e-12);
+    PhysicalBlocks cache{workspace};
     for (Idx row = 0; row != 4; ++row) {
         for (Idx index = y_bus.row_indptr_lu()[row]; index != y_bus.row_indptr_lu()[row + 1]; ++index) {
             Idx const col = y_bus.col_indices_lu()[index];
@@ -298,6 +299,26 @@ void dense_workspace_reference(bool mesh, bool relative, Idx virtual_bus, double
             auto const actual = workspace.calculate_state_covariance_block(row, col);
             REQUIRE(actual.valid);
             CHECK((actual.value - expected).norm() < 1e-12 * alpha);
+            if constexpr (N == 2) {
+                Eigen::Matrix2d const left = workspace.rectangular_jacobian(row);
+                Eigen::Matrix2d const right = workspace.rectangular_jacobian(col);
+                Eigen::Matrix2d const rectangular = left * expected * right.transpose();
+                auto const mapped = workspace.physical_block(row, col);
+                CHECK((mapped.value - rectangular).norm() < 1e-12 * alpha);
+                CHECK(std::isfinite(mapped.construction_scale));
+                if (row <= col) {
+                    auto const& stored = cache.stored(index, row, col);
+                    CHECK(&cache.stored(index, row, col) == &stored);
+                    CHECK((stored.value.array() == mapped.value.array()).all());
+                    CHECK(stored.construction_scale == mapped.construction_scale);
+                    CHECK(stored.valid == mapped.valid);
+                }
+                // Equivalent signed-radius coordinates require changing both
+                // covariance sides and the radial Jacobian column together.
+                Eigen::Matrix2d const sign = (Eigen::Vector2d{1, -1}).asDiagonal();
+                CHECK(((left * sign) * (sign * expected * sign) * (right * sign).transpose() - rectangular).norm() <
+                      1e-12 * alpha);
+            }
         }
         if constexpr (N == 1) {
             if (relative) {
@@ -321,6 +342,78 @@ TEST_CASE("UQ concrete augmented gains agree with independent dense inverse") {
             }
         }
     }
+}
+
+namespace {
+// Synthetic four-bus workspace for physical-map and covariance-completion
+// regressions. Its radial tree 0-1, 1-2, 1-3 leaves the pair (0, 2) outside the
+// filled pattern, and its diagonal blocks force internal complete pivots.
+std::vector<BranchIdx> synthetic_branches(bool mesh) {
+    return mesh ? std::vector<BranchIdx>{{0, 1}, {1, 2}, {2, 3}, {3, 0}}
+                : std::vector<BranchIdx>{{0, 1}, {1, 2}, {1, 3}};
+}
+ComplexValueVector<symmetric_t> synthetic_voltage() {
+    return {std::polar(1.1, 0.1), std::polar(0.9, -0.2), std::polar(1.2, 0.3), 1.0};
+}
+template <class Gain, int N> std::vector<Gain> synthetic_blocks(YBus<symmetric_t> const& y_bus) {
+    using Scalar = typename Gain::Scalar;
+    std::vector<Gain> blocks(y_bus.nnz_lu());
+    for (Idx row = 0; row != 4; ++row) {
+        for (Idx index = y_bus.row_indptr_lu()[row]; index != y_bus.row_indptr_lu()[row + 1]; ++index) {
+            Idx const col = y_bus.col_indices_lu()[index];
+            Gain block;
+            if (row == col) {
+                // State/multiplier coupling forces nontrivial internal complete pivots.
+                for (int k = 0; k != N; ++k) {
+                    block(k, k) = 2.0 + row + k;
+                    block(k + N, k + N) = -0.01;
+                    block(k, k + N) = block(k + N, k) = 8.0 + k;
+                }
+            } else if (y_bus.map_lu_y_bus()[index] >= 0) {
+                for (int k = 0; k != Gain::RowsAtCompileTime; ++k) {
+                    block(k, k) = -0.15;
+                }
+                if constexpr (N == 1) {
+                    block(0, 0) += Scalar{0.0, row < col ? 0.07 : -0.07};
+                }
+            }
+            blocks[index] = block;
+        }
+    }
+    return blocks;
+}
+
+template <class Gain, class Unknown, int N> struct WorkspaceCase {
+    using Workspace = SparseCovarianceWorkspace<Gain, Unknown, N>;
+    MathModelTopology topo;
+    YBus<symmetric_t> y_bus;
+    Workspace covariance;
+
+    WorkspaceCase(bool mesh, bool relative, Idx virtual_bus, double alpha,
+                  ComplexValueVector<symmetric_t> const& voltage = synthetic_voltage())
+        : topo{topology(4, synthetic_branches(mesh))},
+          y_bus{topo, parameters(topo.n_branch())},
+          covariance{y_bus,       synthetic_blocks<Gain, N>(y_bus), alpha, voltage, !relative,
+                     virtual_bus, virtual_bus >= 0 ? 0.3 : 0.0} {}
+    WorkspaceCase(WorkspaceCase const&) = delete;
+    WorkspaceCase& operator=(WorkspaceCase const&) = delete;
+    WorkspaceCase(WorkspaceCase&&) = delete;
+    WorkspaceCase& operator=(WorkspaceCase&&) = delete;
+    ~WorkspaceCase() = default;
+};
+} // namespace
+
+TEST_CASE("UQ physical map preserves an exactly cancelled corrected state") {
+    using Fixture = WorkspaceCase<NRGain, NRUnknown, 2>;
+    Fixture fixture{false, false, -1, 1.0, {1.1, 1.2, 1.0, 1.0}};
+    Fixture::Workspace::StateCovarianceBlock state;
+    state.terms[0](0, 0) = 3.0;
+    state.terms[2](0, 0) = -1.0;
+    state.terms[3](0, 0) = -2.0;
+    auto const block = fixture.covariance.physical_from_state(0, 1, state);
+    CHECK(block.valid);
+    CHECK(block.value.isZero(0));
+    CHECK(block.construction_scale == doctest::Approx(6.0 * 1.1 * 1.2));
 }
 
 TEST_CASE("UQ variance status thresholds and validity") {
@@ -409,6 +502,19 @@ TEST_CASE_TEMPLATE("UQ voltage integration and estimate invariance", Solver, Ite
             }
             CHECK(reordered_result.voltage[3].magnitude.phase[0].raw_status == UQVarianceStatus::not_requested);
             CHECK(reordered_result.voltage[3].angle.phase[0].raw_status == UQVarianceStatus::not_requested);
+            // Adding branch rows shares the covariance workspace and leaves the voltage rows unchanged.
+            auto const voltage_only = result.voltage;
+            StateEstimationUQRequest branch_request = request;
+            branch_request.branch = {{0, BranchSide::from, true, true, true, true},
+                                     {0, BranchSide::to, true, true, true, true}};
+            StateEstimationUQResult<symmetric_t> branch_result;
+            StateEstimationUQContext<symmetric_t> branch_context{branch_request, branch_result};
+            auto const branch_enabled = solver.run_state_estimation(y_bus, input, 1e-12, 30, log, &branch_context);
+            CHECK(branch_enabled.u == ordinary.u);
+            REQUIRE(branch_result.branch.size() == 2);
+            CHECK(branch_result.voltage[0].magnitude.phase[0].raw_variance ==
+                  voltage_only[0].magnitude.phase[0].raw_variance);
+            CHECK(branch_result.voltage[0].angle.phase[0].raw_variance == voltage_only[0].angle.phase[0].raw_variance);
         }
         // An empty request must skip UQ work and leave the fresh result empty.
         auto const input = voltage_measurement_input(true, variance_scale);
@@ -437,11 +543,20 @@ TEST_CASE_TEMPLATE("UQ voltage integration and estimate invariance", Solver, Ite
             auto const ordinary = solver.run_state_estimation(y_bus, input, 1e-10, 100, log);
             StateEstimationUQRequest request;
             request.voltage = {{0, true, true}, {1, true, true}};
+            request.branch = {{0, BranchSide::from, true, true, true, true},
+                              {0, BranchSide::to, true, true, true, true}};
             StateEstimationUQResult<symmetric_t> result;
             StateEstimationUQContext<symmetric_t> context{request, result};
             auto const enabled = solver.run_state_estimation(y_bus, input, 1e-10, 100, log, &context);
             CHECK(enabled.u == ordinary.u);
             REQUIRE(result.voltage.size() == 2);
+            REQUIRE(result.branch.size() == 2);
+            for (auto const& branch : result.branch) {
+                for (auto const* value :
+                     {&branch.active_power, &branch.reactive_power, &branch.current_magnitude, &branch.current_angle}) {
+                    CHECK(value->phase[0].raw_status == UQVarianceStatus::valid);
+                }
+            }
             auto const& mc_variance = Solver::is_NRSE_solver ? reference.nrse_variance : reference.ilse_variance;
             for (std::size_t bus = 0; bus != result.voltage.size(); ++bus) {
                 auto const& voltage = result.voltage[bus];
@@ -455,25 +570,28 @@ TEST_CASE_TEMPLATE("UQ voltage integration and estimate invariance", Solver, Ite
     }
 }
 
-TEST_CASE_TEMPLATE("UQ request bounds and unsupported categories", Sym, symmetric_t, asymmetric_t) {
+TEST_CASE_TEMPLATE("UQ request bounds and unsupported injection requests", Sym, symmetric_t, asymmetric_t) {
     StateEstimationUQRequest request;
     StateEstimationUQResult<Sym> result;
     StateEstimationUQContext<Sym> context{request, result};
-    CHECK_NOTHROW(validate_context<Sym>(nullptr, 2));
+    CHECK_NOTHROW(validate_context<Sym>(nullptr, 2, 1));
     for (Idx const bus : {-1, 2}) {
         request.voltage = {{bus, true, false}};
-        CHECK_THROWS_AS(validate_context(&context, 2), InvalidArguments);
+        CHECK_THROWS_AS(validate_context(&context, 2, 1), InvalidArguments);
     }
     request = {};
-    request.branch = {{0, BranchSide::from, true, false, false, false}};
-    CHECK_THROWS_WITH_AS(validate_context(&context, 2), "Branch and injection uncertainty are not implemented",
-                         InvalidArguments);
+    for (Idx const branch : {-1, 1}) {
+        request.branch = {{branch, BranchSide::from, true, false, false, false}};
+        CHECK_THROWS_AS(validate_context(&context, 2, 1), InvalidArguments);
+    }
+    request.branch = {{0, static_cast<BranchSide>(2), true, false, false, false}};
+    CHECK_THROWS_AS(validate_context(&context, 2, 1), InvalidArguments);
     request = {};
     request.injection = {{0, true, false}};
-    CHECK_THROWS_WITH_AS(validate_context(&context, 2), "Branch and injection uncertainty are not implemented",
+    CHECK_THROWS_WITH_AS(validate_context(&context, 2, 1), "Injection uncertainty is not implemented",
                          InvalidArguments);
     request = {};
-    CHECK_NOTHROW(validate_context(&context, 2));
+    CHECK_NOTHROW(validate_context(&context, 2, 1));
 }
 
 TEST_CASE_TEMPLATE("UQ numerical failure keeps the estimate and reports requested uncertainty invalid", Solver,
@@ -491,11 +609,13 @@ TEST_CASE_TEMPLATE("UQ numerical failure keeps the estimate and reports requeste
     auto const ordinary = solver.run_state_estimation(y_bus, input, 1e-12, 30, log);
     StateEstimationUQRequest request;
     request.voltage = {{0, true, true}, {1, false, false}};
+    request.branch = {{0, BranchSide::to, true, false, true, false}};
     StateEstimationUQResult<symmetric_t> result;
     StateEstimationUQContext<symmetric_t> context{request, result};
     auto const enabled = solver.run_state_estimation(y_bus, input, 1e-12, 30, log, &context);
     CHECK(enabled.u == ordinary.u);
     REQUIRE(result.voltage.size() == 2);
+    REQUIRE(result.branch.size() == 1);
     for (auto const* value : {&result.voltage[0].magnitude.phase[0], &result.voltage[0].angle.phase[0]}) {
         CHECK(value->raw_status == UQVarianceStatus::invalid);
         CHECK(std::isnan(value->sigma));
@@ -504,6 +624,14 @@ TEST_CASE_TEMPLATE("UQ numerical failure keeps the estimate and reports requeste
     }
     CHECK(result.voltage[1].magnitude.phase[0].raw_status == UQVarianceStatus::not_requested);
     CHECK(result.voltage[1].angle.phase[0].raw_status == UQVarianceStatus::not_requested);
+    auto const& branch = result.branch[0];
+    for (auto const* value : {&branch.active_power.phase[0], &branch.current_magnitude.phase[0]}) {
+        CHECK(value->raw_status == UQVarianceStatus::invalid);
+        CHECK(std::isnan(value->sigma));
+        CHECK(std::isnan(value->raw_variance));
+    }
+    CHECK(branch.reactive_power.phase[0].raw_status == UQVarianceStatus::not_requested);
+    CHECK(branch.current_angle.phase[0].raw_status == UQVarianceStatus::not_requested);
 }
 
 } // namespace power_grid_model::math_solver

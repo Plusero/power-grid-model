@@ -15,6 +15,8 @@ add_executable(
     "test_sparse_lu_solver.cpp"
     "test_state_estimation_uq.cpp"
     "test_state_estimation_uq_asym_core.cpp"
+    "test_state_estimation_uq_asym_propagation.cpp"
+    "test_state_estimation_uq_branch.cpp"
     "test_observability.cpp"
     "test_measured_values.cpp"
     "test_y_bus.cpp"

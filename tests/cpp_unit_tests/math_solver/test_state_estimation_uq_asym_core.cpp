@@ -223,6 +223,14 @@ void workspace_dense_reference(bool relative, Idx virtual_bus, double alpha) {
             auto const actual = covariance.calculate_state_covariance_block(row, col);
             CHECK(actual.valid);
             CHECK((actual.value - expected).norm() < 3e-12 * alpha);
+            if constexpr (!uses_complex_state) {
+                auto const physical = covariance.physical_block(row, col);
+                auto const expected_physical =
+                    (covariance.rectangular_jacobian(row) * expected * covariance.rectangular_jacobian(col).transpose())
+                        .eval();
+                CHECK(physical.valid);
+                CHECK((physical.value - expected_physical).norm() < 4e-12 * alpha);
+            }
         }
     }
     StateEstimationUQRequest request;

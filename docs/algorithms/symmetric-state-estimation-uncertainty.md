@@ -6,8 +6,9 @@
 The optional `StateEstimationUQContext` is an internal, synchronous math-solver
 interface for quantifying the uncertainty of state-estimation results. It leaves
 `SolverOutput` and public calculation signatures unchanged.
-Requests use island-local mathematical indices, checked against the bus count.
-Voltage requests may be unordered or repeated; result rows follow request order.
+Requests use island-local mathematical indices. Bus/branch bounds and branch
+sides are checked. Voltage and branch rows may be unordered or repeated; result
+rows follow request order.
 A row selecting no quantities retains the default `not_requested` fields.
 Null and empty requests perform no uncertainty work. Callers supply fresh UQ
 result storage for each calculation. Results are published only after the
@@ -16,8 +17,8 @@ requests and estimator failures leave the supplied result unchanged. A gain
 that fails a numerical check of the uncertainty calculation does not discard
 the estimate: the estimate is returned and every requested uncertainty is
 reported invalid.
-This first implementation supports voltage requests for both symmetries; branch
-and injection requests are declared but fail explicitly.
+Voltage and branch requests are supported for both symmetries; nodal-injection
+requests remain declared but fail explicitly.
 
 ## Prepared model and variance normalization
 
@@ -105,8 +106,10 @@ $\sqrt{\varepsilon_{\text{mach}}}$ times the state-corner Frobenius scale (twice
 the mean orientation norm for off-diagonal pairs). Accepted state
 corners sum the two orientations in a local copy, apply any shared
 virtual/reference corrections, and restore normalization and the one-half
-orientation factor. Reverse access returns the adjoint. Stored augmented-inverse blocks
-remain unchanged.
+orientation factor. This same small double-precision state corner supplies
+rectangular values. Construction scales sum the Frobenius norms of the
+normalized correction terms. Reverse access returns the adjoint. Stored
+augmented-inverse blocks remain unchanged.
 
 From the symmetrized state corner $Z_{ij} = \frac{1}{2}(B_{ij}[q,q] + B_{ji}[q,q]^H)$,
 physical state covariance and voltage uncertainties are obtained as follows:
@@ -132,6 +135,7 @@ physical state covariance and voltage uncertainties are obtained as follows:
   slack phase-$a$ angle row and column are set algebraically to zero. Magnitude
   and angle variances are the canonical polar diagonal entries, without an ILSE
   factor of one half.
+Rectangular covariance uses the same returned phasors.
 
 ### Why the virtual-angle correction is needed
 
@@ -216,3 +220,41 @@ modes, radial and meshed topologies with fill-in, variance normalization scales,
 virtual and slack angle references, exact injection constraints, request
 validation, UQ numerical-failure handling,
 and unchanged estimates with uncertainty enabled.
+
+## Branch propagation
+
+Branch requests select an island-local mathematical branch and its `from` or
+`to` terminal. The actual terminal admittance row gives `I = c U`; the signed
+power entering that terminal is `S = U_terminal conj(I)`. Transformer phase
+shifts and terminal shunts therefore use the same coefficients as ordinary
+branch results. The four terminal covariance blocks are available on the
+original filled pattern. Stored physical blocks consume the workspace's
+canonical covariance view. Reference blocks use the same bounded symmetry
+correction before their orientation average is used. All branch outputs use
+the same normalized state corner; an already canonical view is not converted
+or checked again.
+
+ILSE applies the proper complex voltage covariance as an equivalent real
+rectangular covariance with its required factor of one half. Power derivatives
+retain both terms `conj(I) dU_terminal + U_terminal conj(c dU)`; the resulting
+power perturbation can have nonzero pseudo-covariance even though voltage
+perturbations are modeled proper. NRSE transforms the canonical polar
+covariance to rectangular coordinates before the same physical output maps.
+
+For nonzero current the magnitude derivative is
+`Re(conj(I) dI / abs(I))`, and the angle derivative is `Im(dI / I)`.
+ILSE slack-relative current angles additionally subtract the reporting slack
+angle, including the terminal/slack cross covariance. NRSE uses its already
+projected relative covariance without another slack subtraction. Exactly zero
+current makes magnitude and angle uncertainty invalid; signed P/Q derivatives
+remain defined. Arbitrarily small nonzero current has no numerical cutoff,
+although first-order accuracy can deteriorate near zero. A disconnected
+requested terminal is invalid; connected terminals ignore an absent opposite
+bus. These outputs remain per unit, with physical conversion performed by the
+observer adapter.
+
+Independent central finite differences check both terminal output maps, joint
+dense contractions, transformer/shunt coefficients, absolute and relative
+references, virtual-angle correction, and the required ILSE power
+pseudo-covariance. Solver integration checks preserve estimates and previously
+computed voltage results while sharing one covariance workspace and selected-inverse sweep.

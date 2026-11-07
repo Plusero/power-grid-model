@@ -38,6 +38,40 @@ inline constexpr std::size_t slack_reference = 4;
 inline constexpr std::size_t count = 5;
 } // namespace correction_term
 
+// Accumulates the construction scale S_C = sum_k ||C_k||_F across the covariance correction terms.
+class CorrectionNorms {
+  public:
+    void add(std::size_t k, double x) { norms_[k].add(x); }
+    void add(std::size_t k, DoubleComplex x) { norms_[k].add(x); }
+    double sum() const {
+        double result = 0.0;
+        for (auto const& norm : norms_) {
+            result += norm.value();
+        }
+        return result;
+    }
+
+  private:
+    std::array<FrobeniusNorm, correction_term::count> norms_{};
+};
+
+// A covariance block with its value, construction scale and validity. symmetry_projected marks a
+// block whose Hermitian symmetry has already been checked and projected.
+template <class Matrix> struct CovarianceBlock {
+    Matrix value = Matrix::Zero();
+    double construction_scale = 0.0;
+    bool valid = true;
+    bool symmetry_projected = false;
+};
+
+template <class Matrix> std::array<Matrix, correction_term::count> zero_terms() {
+    std::array<Matrix, correction_term::count> result;
+    for (auto& term : result) {
+        term.setZero();
+    }
+    return result;
+}
+
 // Covariance workspace for one island and one UQ request.
 //
 // Notation used throughout this file:
@@ -65,16 +99,19 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
     // State rows T_i of the NRSE virtual-angle inverse columns (one column per phase).
     using VirtualColumnBlock = Eigen::Matrix<Scalar, StateDim, phase_count>;
     using RealStateMatrix = Eigen::Matrix<double, StateDim, StateDim>;
-    // Corrected state covariance block C_ij together with roundoff scales over its correction terms C_k:
-    // - term_scale(r,c) = sum_k |C_k(r,c)| (entrywise roundoff scale for diagonal variances),
-    // - has_nonzero_term(r,c) tracks whether any correction term was nonzero before rounding,
-    // - valid is false if finiteness or Hermitian symmetry fails.
-    struct StateCovarianceBlock {
-        StateMatrix value = StateMatrix::Zero();
+    // The state coordinates of one bus mapped to physical coordinates: complex voltages for ILSE,
+    // rectangular [Re U, Im U] for NRSE.
+    using PhysicalMatrix = StateMatrix;
+    // Corrected covariance block C_ij in value, with roundoff bookkeeping over the correction terms C_k
+    // (correction_term): terms[k] are the rounded C_k, term_scale(r,c) = sum_k |C_k(r,c)|,
+    // construction_scale = sum_k ||C_k||_F, and has_nonzero_term(r,c) marks a term that is nonzero in
+    // exact arithmetic. valid is false when a finiteness or symmetry check fails.
+    struct StateCovarianceBlock : CovarianceBlock<StateMatrix> {
+        std::array<StateMatrix, correction_term::count> terms = zero_terms<StateMatrix>();
         RealStateMatrix term_scale = RealStateMatrix::Zero();
         Eigen::Matrix<bool, StateDim, StateDim> has_nonzero_term = Eigen::Matrix<bool, StateDim, StateDim>::Zero();
-        bool valid = true;
     };
+    using PhysicalBlock = CovarianceBlock<PhysicalMatrix>;
     using Solver = SparseLUSolver<Gain, Unknown, Unknown>;
 
     // Pre-existing LU factorization and block permutations from ILSE.
@@ -144,8 +181,13 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
             }
         }
 
-        // 6. Relative NRSE: precompute each bus's unnormalized bus-to-slack cross-covariance vector rho_i.
+        // 6. NRSE: the polar phase needs atan2 and sincos, so form each bus's rectangular map once;
+        // for relative angles also one reference cross per bus, shared by all of its blocks.
         if constexpr (!uses_complex_state) {
+            jacobians_.reserve(u_.size());
+            for (Idx bus = 0; bus != static_cast<Idx>(u_.size()); ++bus) {
+                jacobians_.push_back(rectangular_jacobian(bus));
+            }
             if (report_relative_angle) {
                 reference_crosses_.reserve(u_.size());
                 for (Idx bus = 0; bus != static_cast<Idx>(u_.size()); ++bus) {
@@ -162,6 +204,9 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
         if (row > col) {
             auto result = calculate_state_covariance_block(col, row);
             result.value = result.value.adjoint().eval();
+            for (auto& term : result.terms) {
+                term = term.adjoint().eval();
+            }
             result.term_scale.transposeInPlace();
             result.has_nonzero_term.transposeInPlace();
             return result;
@@ -198,7 +243,61 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
             invalid.valid = false;
             return invalid;
         }
-        return correct_covariance(row, col, source);
+        auto result = correct_covariance(row, col, source);
+        result.symmetry_projected = result.valid;
+        return result;
+    }
+
+    // The block (row, col) in physical coordinates, J_row C J_col^H; see physical_from_state.
+    PhysicalBlock physical_block(Idx row, Idx col) const {
+        if (row > col) {
+            auto result = physical_block(col, row);
+            result.value = result.value.adjoint().eval();
+            return result;
+        }
+        return physical_from_state(row, col, calculate_state_covariance_block(row, col));
+    }
+    // Map the state block of buses (row <= col) to physical coordinates. The result is valid only
+    // when the state block is valid and maps to finite values.
+    PhysicalBlock physical_from_state(Idx row, Idx col, StateCovarianceBlock const& state) const {
+        PhysicalBlock result;
+        result.valid = state.valid;
+        result.symmetry_projected = state.symmetry_projected;
+        if constexpr (uses_complex_state) {
+            result.value = state.value;
+            result.construction_scale = state.construction_scale;
+        } else {
+            map_physical(jacobians_[row], jacobians_[col], row == col, state, result);
+            result.valid = result.valid && result.value.allFinite() && std::isfinite(result.construction_scale);
+        }
+        return result;
+    }
+
+    // NRSE: the map of bus's polar state [theta, |U|] to rectangular [Re U, Im U].
+    PhysicalMatrix rectangular_jacobian(Idx bus) const
+        requires(!uses_complex_state)
+    {
+        PhysicalMatrix result = PhysicalMatrix::Zero();
+        for (int phase = 0; phase != phase_count; ++phase) {
+            DoubleComplex const voltage = phase_voltage(bus, phase);
+            DoubleComplex const direction = std::polar(1.0, std::arg(voltage));
+            result(phase, phase) = -voltage.imag();
+            result(phase, phase + phase_count) = direction.real();
+            result(phase + phase_count, phase) = voltage.real();
+            result(phase + phase_count, phase + phase_count) = direction.imag();
+        }
+        return result;
+    }
+
+    // Position of the stored block (row, col) on the LU pattern, if the pair is stored.
+    std::optional<Idx> find_block_index(Idx row, Idx col) const {
+        auto const first = col_indices_.begin() + row_indptr_[row];
+        auto const last = col_indices_.begin() + row_indptr_[row + 1];
+        auto const found = std::lower_bound(first, last, col);
+        if (found == last || *found != col) {
+            return std::nullopt;
+        }
+        return static_cast<Idx>(found - col_indices_.begin());
     }
 
     DoubleComplex phase_voltage(Idx bus, int phase) const {
@@ -234,27 +333,33 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
     //         Cr_ij = C0_ij - r_i * d^T - d * r_j^T + c * d * d^T.
     StateCovarianceBlock correct_covariance(Idx row, Idx col, StateMatrix const& source) const {
         StateCovarianceBlock result;
+        CorrectionNorms norms;
         if constexpr (uses_complex_state) {
             double const alpha = variance_normalization;
             for (int r = 0; r != StateDim; ++r) {
                 for (int c = 0; c != StateDim; ++c) {
                     DoubleComplex const term = alpha * source(r, c) * 0.5;
                     result.value(r, c) = term;
+                    result.terms[correction_term::normalized_source](r, c) = term;
                     result.term_scale(r, c) = modulus(term);
+                    norms.add(correction_term::normalized_source, term);
                 }
             }
         } else {
             for (int r = 0; r != StateDim; ++r) {
                 for (int c = 0; c != StateDim; ++c) {
                     if (row == col && r > c) {
-                        mirror_entry(result, r, c);
+                        // A diagonal block is symmetric by construction.
+                        mirror_entry(result, norms, r, c);
                     } else if (!slack_angle_projected(row, col, r, c)) {
-                        correct_entry(result, row, col, r, c, source(r, c));
+                        // The known projected row/column is algebraically exact and stays zero.
+                        correct_entry(result, norms, row, col, r, c, source(r, c));
                     }
                 }
             }
         }
-        result.valid = result.value.allFinite();
+        result.construction_scale = norms.sum();
+        result.valid = result.value.allFinite() && std::isfinite(result.construction_scale);
         return result;
     }
 
@@ -264,7 +369,8 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
     // For relative angles, d selects the angle coordinates [0, phase_count), r_i = alpha * rho_i
     // is the bus-to-slack-phase-a cross-covariance vector, and c = alpha * rho_s[0] is the slack
     // phase-a angle variance in C0.
-    void correct_entry(StateCovarianceBlock& result, Idx row, Idx col, int r, int c, double source) const {
+    void correct_entry(StateCovarianceBlock& result, CorrectionNorms& norms, Idx row, Idx col, int r, int c,
+                       double source) const {
         double const alpha = variance_normalization;
         RealSum sum;
         std::array<double, correction_term::count> doubled_terms{};
@@ -292,18 +398,25 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
         }
         result.value(r, c) = alpha * sum.value() * 0.5;
         double term_scale = 0.0;
-        for (double const doubled_term : doubled_terms) {
-            term_scale += std::abs(alpha * doubled_term * 0.5);
+        for (std::size_t k = 0; k != correction_term::count; ++k) {
+            double const term = alpha * doubled_terms[k] * 0.5;
+            result.terms[k](r, c) = term;
+            term_scale += std::abs(term);
+            norms.add(k, term);
         }
         result.term_scale(r, c) = term_scale;
         result.has_nonzero_term(r, c) = sum.has_nonzero_term();
     }
 
     // Mirror upper-triangle entry (c, r) to lower-triangle entry (r, c) on a symmetric NRSE diagonal block.
-    static void mirror_entry(StateCovarianceBlock& result, int r, int c) {
+    static void mirror_entry(StateCovarianceBlock& result, CorrectionNorms& norms, int r, int c) {
         result.value(r, c) = result.value(c, r);
         result.term_scale(r, c) = result.term_scale(c, r);
         result.has_nonzero_term(r, c) = result.has_nonzero_term(c, r);
+        for (std::size_t k = 0; k != correction_term::count; ++k) {
+            result.terms[k](r, c) = result.terms[k](c, r);
+            norms.add(k, result.terms[k](r, c));
+        }
     }
 
     // True when (row, r) or (col, c) is the slack phase-a angle in relative NRSE (identically zero).
@@ -314,6 +427,44 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
 
     // Unnormalized bus-to-slack-phase-a cross covariance rho_i[k] = (C0_{i,s} e_0)[k] / alpha.
     double reference_cross(Idx bus, int coordinate) const { return reference_crosses_[bus][coordinate]; }
+
+    // J_row (C J_col^T) in ordinary double; a diagonal block is symmetric by
+    // construction. The construction scale sums the Frobenius norms of the
+    // mapped correction terms.
+    static void map_physical(PhysicalMatrix const& left, PhysicalMatrix const& right, bool diagonal,
+                             StateCovarianceBlock const& state, PhysicalBlock& result) {
+        for (int r = 0; r != StateDim; ++r) {
+            for (int c = 0; c != StateDim; ++c) {
+                if (diagonal && r > c) {
+                    result.value(r, c) = result.value(c, r);
+                    continue;
+                }
+                RealSum sum;
+                for (int a = 0; a != StateDim; ++a) {
+                    for (int b = 0; b != StateDim; ++b) {
+                        sum.add_product(left(r, a), state.value(a, b), right(c, b));
+                    }
+                }
+                result.value(r, c) = sum.value();
+            }
+        }
+        CorrectionNorms norms;
+        for (std::size_t k = 0; k != state.terms.size(); ++k) {
+            if (state.terms[k].isZero(0)) {
+                continue;
+            }
+            for (int r = 0; r != StateDim; ++r) {
+                for (int c = 0; c != StateDim; ++c) {
+                    RealSum sum;
+                    for (int a = 0; a != StateDim; ++a)
+                        for (int b = 0; b != StateDim; ++b)
+                            sum.add_product(left(r, a), state.terms[k](a, b), right(c, b));
+                    norms.add(k, sum.value());
+                }
+            }
+        }
+        result.construction_scale = norms.sum();
+    }
 
     // ----- Workspace construction helpers (in constructor execution order) -----
 
@@ -461,7 +612,33 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
     Idx virtual_angle_bus_;
     double virtual_angle_weight_;                     // normalized virtual-angle weight w = alpha / var(U_v)
     std::vector<VirtualColumnBlock> virtual_columns_; // NRSE: per-bus virtual-angle columns T_i
+    std::vector<PhysicalMatrix> jacobians_;           // NRSE: per-bus rectangular_jacobian(i)
     std::vector<std::array<double, StateDim>> reference_crosses_; // relative NRSE: per-bus cross vector rho_i
+};
+
+// Per-call cache of stored canonical (row <= col) physical blocks by LU position,
+// shared by the branch and injection helpers of one calculation so each block is
+// derived once. The workspace must not change while the cache is in use.
+template <class Workspace> class PhysicalBlocks {
+  public:
+    using Block = typename Workspace::PhysicalBlock;
+
+    explicit PhysicalBlocks(Workspace const& workspace)
+        : workspace_{workspace}, blocks_(workspace.augmented_matrix.size()) {}
+
+    Workspace const& workspace() const { return workspace_; }
+    // index must be the LU position of (row, col), row <= col.
+    Block const& stored(Idx index, Idx row, Idx col) {
+        auto& block = blocks_[index];
+        if (!block) {
+            block = workspace_.physical_block(row, col);
+        }
+        return *block;
+    }
+
+  private:
+    Workspace const& workspace_;
+    std::vector<std::optional<Block>> blocks_;
 };
 
 // ----- Voltage uncertainty from corrected state covariance -----

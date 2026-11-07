@@ -8,6 +8,7 @@
 
 #include "measured_values.hpp"
 #include "state_estimation_uq.hpp"
+#include "state_estimation_uq_branch.hpp"
 #include "state_estimation_uq_workspace.hpp"
 #include "y_bus.hpp"
 
@@ -36,6 +37,25 @@ template <symmetry_tag sym> StateEstimationUQResult<sym> invalid_results(StateEs
             }
         }
     }
+    result.branch.resize(request.branch.size());
+    for (std::size_t index = 0; index != request.branch.size(); ++index) {
+        auto const& branch_request = request.branch[index];
+        auto& output = result.branch[index];
+        for (std::size_t phase = 0; phase != output.active_power.phase.size(); ++phase) {
+            if (branch_request.active_power) {
+                output.active_power.phase[phase].raw_status = UQVarianceStatus::invalid;
+            }
+            if (branch_request.reactive_power) {
+                output.reactive_power.phase[phase].raw_status = UQVarianceStatus::invalid;
+            }
+            if (branch_request.current_magnitude) {
+                output.current_magnitude.phase[phase].raw_status = UQVarianceStatus::invalid;
+            }
+            if (branch_request.current_angle) {
+                output.current_angle.phase[phase].raw_status = UQVarianceStatus::invalid;
+            }
+        }
+    }
     return result;
 }
 
@@ -57,7 +77,10 @@ calculate_results(YBus<typename Workspace::Symmetry> const& y_bus, std::vector<G
     try {
         Workspace const workspace{y_bus,       gain,           alpha,        u, measured_values.has_angle(),
                                   virtual_bus, virtual_weight, factorization};
-        return calculate_voltage_uq_results(workspace, request);
+        auto result = calculate_voltage_uq_results(workspace, request);
+        PhysicalBlocks stored{workspace};
+        branch_results(workspace, y_bus, request, result, stored);
+        return result;
     } catch (SparseMatrixError const&) {
         return invalid_results<typename Workspace::Symmetry>(request);
     }

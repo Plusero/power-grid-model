@@ -10,7 +10,10 @@
 
 #include "../common/common.hpp"
 
+#include <Eigen/Core>
+
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <complex>
 #include <initializer_list>
@@ -81,6 +84,10 @@ class RealSum {
         absolute_scale_ += std::abs(term);
         has_nonzero_term_ = has_nonzero_term_ || term != 0.0;
     }
+    void add_product(double a, double b) {
+        add(a * b);
+        has_nonzero_term_ = has_nonzero_term_ || (a != 0.0 && b != 0.0);
+    }
     void add_product(double a, double b, double c) {
         add(a * b * c);
         has_nonzero_term_ = has_nonzero_term_ || (a != 0.0 && b != 0.0 && c != 0.0);
@@ -105,6 +112,28 @@ class RealSum {
     bool has_nonzero_term_ = false;
 };
 
+// Ordinary complex accumulation of componentwise products.
+class ComplexSum {
+  public:
+    void add(DoubleComplex term) {
+        real_.add(term.real());
+        imag_.add(term.imag());
+    }
+    void add_product(DoubleComplex a, DoubleComplex b) {
+        real_.add_product(a.real(), b.real());
+        real_.add_product(-a.imag(), b.imag());
+        imag_.add_product(a.real(), b.imag());
+        imag_.add_product(a.imag(), b.real());
+    }
+    DoubleComplex value() const { return {real_.value(), imag_.value()}; }
+
+  private:
+    RealSum real_;
+    RealSum imag_;
+};
+template <class Scalar>
+using Accumulator = std::conditional_t<Eigen::NumTraits<Scalar>::IsComplex, ComplexSum, RealSum>;
+
 // Accumulate weight * |x|^2 / 2 as real products.
 inline RealSum half_square(double weight, DoubleComplex x) {
     RealSum result;
@@ -120,6 +149,39 @@ inline RealSum real_part_of_product(double factor, DoubleComplex x, DoubleComple
     result.add_product(-factor, x.imag(), y.real(), z.imag());
     result.add_product(-factor, x.imag(), y.imag(), z.real());
     return result;
+}
+// factor * Im(x * y * z) as a sum of real products.
+inline RealSum imag_part_of_product(double factor, DoubleComplex x, DoubleComplex y, DoubleComplex z) {
+    RealSum result;
+    result.add_product(factor, x.real(), y.real(), z.imag());
+    result.add_product(factor, x.real(), y.imag(), z.real());
+    result.add_product(factor, x.imag(), y.real(), z.real());
+    result.add_product(-factor, x.imag(), y.imag(), z.imag());
+    return result;
+}
+
+// Rectangular derivatives of S = U_t conj(I), I = sum_k c_k U_k, with respect to
+// (Re U_k, Im U_k), as the complex pair (real axis, imaginary axis): w + conj(I)
+// and -j w + j conj(I) with w = U_t conj(c_k), the conj(I) terms only at k = t.
+// At the terminal the self term is regrouped exactly: U_t conj(c_t) +
+// conj(c_t U_t) = 2 Re(U_t) conj(c_t) and -j U_t conj(c_t) + j conj(c_t U_t) =
+// 2 Im(U_t) conj(c_t). So the two never cancel in rounding, as they would at a
+// branch open at one end, where they differ by the small charging current.
+// others is sum_{k != t} conj(c_k U_k).
+inline std::array<DoubleComplex, 2> power_axes(DoubleComplex voltage, DoubleComplex c_k, bool terminal,
+                                               DoubleComplex others) {
+    DoubleComplex const conj_c = std::conj(c_k);
+    if (terminal) {
+        auto axis = [&](double component, DoubleComplex offset) {
+            double const doubled = 2.0 * component;
+            return DoubleComplex{doubled * conj_c.real(), doubled * conj_c.imag()} + offset;
+        };
+        return {axis(voltage.real(), others), axis(voltage.imag(), {-others.imag(), others.real()})};
+    }
+    ComplexSum product;
+    product.add_product(voltage, conj_c);
+    DoubleComplex const w = product.value();
+    return {w, DoubleComplex{w.imag(), -w.real()}};
 }
 
 // Frobenius norm ||X||_F = sqrt(sum_ij |X_ij|^2) accumulated as a plain sum of squares.
