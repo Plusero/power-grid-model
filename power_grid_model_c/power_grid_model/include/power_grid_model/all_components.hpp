@@ -15,6 +15,7 @@
 #include "component/branch.hpp"
 #include "component/branch3.hpp"
 #include "component/current_sensor.hpp"
+#include "component/current_uncertainty_observer.hpp"
 #include "component/edge.hpp"
 #include "component/fault.hpp"
 #include "component/generic_branch.hpp"
@@ -23,6 +24,7 @@
 #include "component/load_gen.hpp"
 #include "component/node.hpp"
 #include "component/power_sensor.hpp"
+#include "component/power_uncertainty_observer.hpp"
 #include "component/regulator.hpp"
 #include "component/sensor.hpp"
 #include "component/shunt.hpp"
@@ -32,16 +34,18 @@
 #include "component/transformer_tap_regulator.hpp"
 #include "component/voltage_regulator.hpp"
 #include "component/voltage_sensor.hpp"
+#include "component/voltage_uncertainty_observer.hpp"
 
 namespace power_grid_model {
 
-using AllComponents = ComponentList<Node, Line, AsymLine, GenericBranch, Transformer, Link, ThreeWindingTransformer,
-                                    Shunt, Source, SymGenerator, AsymGenerator, SymLoad, AsymLoad, SymPowerSensor,
-                                    AsymPowerSensor, SymVoltageSensor, AsymVoltageSensor, SymCurrentSensor,
-                                    AsymCurrentSensor, Fault, TransformerTapRegulator, VoltageRegulator>;
+using AllComponents =
+    ComponentList<Node, Line, AsymLine, GenericBranch, Transformer, Link, ThreeWindingTransformer, Shunt, Source,
+                  SymGenerator, AsymGenerator, SymLoad, AsymLoad, SymPowerSensor, AsymPowerSensor, SymVoltageSensor,
+                  AsymVoltageSensor, SymCurrentSensor, AsymCurrentSensor, Fault, TransformerTapRegulator,
+                  VoltageRegulator, VoltageUncertaintyObserver, PowerUncertaintyObserver, CurrentUncertaintyObserver>;
 
 using AllExtraRetrievableTypes =
     ExtraRetrievableTypes<Base, Node, Edge, Branch, Branch3, Appliance, GenericLoadGen, GenericLoad, GenericGenerator,
-                          GenericPowerSensor, GenericVoltageSensor, GenericCurrentSensor, Regulator>;
+                          GenericPowerSensor, GenericVoltageSensor, GenericCurrentSensor, Regulator, Observer>;
 
 } // namespace power_grid_model

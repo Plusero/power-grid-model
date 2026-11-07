@@ -330,6 +330,26 @@ PGM_MetaAttribute const* const PGM_def_input_fault_fault_phase = PGM_meta_get_at
 PGM_MetaAttribute const* const PGM_def_input_fault_fault_object = PGM_meta_get_attribute_by_name(nullptr, "input", "fault", "fault_object");
 PGM_MetaAttribute const* const PGM_def_input_fault_r_f = PGM_meta_get_attribute_by_name(nullptr, "input", "fault", "r_f");
 PGM_MetaAttribute const* const PGM_def_input_fault_x_f = PGM_meta_get_attribute_by_name(nullptr, "input", "fault", "x_f");
+// component voltage_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_input_voltage_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "input", "voltage_uncertainty_observer");
+// attributes of input voltage_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_input_voltage_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "input", "voltage_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_input_voltage_uncertainty_observer_observed_object = PGM_meta_get_attribute_by_name(nullptr, "input", "voltage_uncertainty_observer", "observed_object");
+PGM_MetaAttribute const* const PGM_def_input_voltage_uncertainty_observer_status = PGM_meta_get_attribute_by_name(nullptr, "input", "voltage_uncertainty_observer", "status");
+// component power_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_input_power_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "input", "power_uncertainty_observer");
+// attributes of input power_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_input_power_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "input", "power_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_input_power_uncertainty_observer_observed_object = PGM_meta_get_attribute_by_name(nullptr, "input", "power_uncertainty_observer", "observed_object");
+PGM_MetaAttribute const* const PGM_def_input_power_uncertainty_observer_status = PGM_meta_get_attribute_by_name(nullptr, "input", "power_uncertainty_observer", "status");
+PGM_MetaAttribute const* const PGM_def_input_power_uncertainty_observer_observed_terminal_type = PGM_meta_get_attribute_by_name(nullptr, "input", "power_uncertainty_observer", "observed_terminal_type");
+// component current_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_input_current_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "input", "current_uncertainty_observer");
+// attributes of input current_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_input_current_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "input", "current_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_input_current_uncertainty_observer_observed_object = PGM_meta_get_attribute_by_name(nullptr, "input", "current_uncertainty_observer", "observed_object");
+PGM_MetaAttribute const* const PGM_def_input_current_uncertainty_observer_status = PGM_meta_get_attribute_by_name(nullptr, "input", "current_uncertainty_observer", "status");
+PGM_MetaAttribute const* const PGM_def_input_current_uncertainty_observer_observed_terminal_type = PGM_meta_get_attribute_by_name(nullptr, "input", "current_uncertainty_observer", "observed_terminal_type");
 // dataset sym_output
 PGM_MetaDataset const* const PGM_def_sym_output = PGM_meta_get_dataset_by_name(nullptr, "sym_output");
 // components of sym_output
@@ -553,6 +573,27 @@ PGM_MetaComponent const* const PGM_def_sym_output_fault = PGM_meta_get_component
 // attributes of sym_output fault
 PGM_MetaAttribute const* const PGM_def_sym_output_fault_id = PGM_meta_get_attribute_by_name(nullptr, "sym_output", "fault", "id");
 PGM_MetaAttribute const* const PGM_def_sym_output_fault_energized = PGM_meta_get_attribute_by_name(nullptr, "sym_output", "fault", "energized");
+// component voltage_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_sym_output_voltage_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "sym_output", "voltage_uncertainty_observer");
+// attributes of sym_output voltage_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_sym_output_voltage_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "sym_output", "voltage_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_sym_output_voltage_uncertainty_observer_energized = PGM_meta_get_attribute_by_name(nullptr, "sym_output", "voltage_uncertainty_observer", "energized");
+PGM_MetaAttribute const* const PGM_def_sym_output_voltage_uncertainty_observer_u_sigma = PGM_meta_get_attribute_by_name(nullptr, "sym_output", "voltage_uncertainty_observer", "u_sigma");
+PGM_MetaAttribute const* const PGM_def_sym_output_voltage_uncertainty_observer_u_angle_sigma = PGM_meta_get_attribute_by_name(nullptr, "sym_output", "voltage_uncertainty_observer", "u_angle_sigma");
+// component power_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_sym_output_power_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "sym_output", "power_uncertainty_observer");
+// attributes of sym_output power_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_sym_output_power_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "sym_output", "power_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_sym_output_power_uncertainty_observer_energized = PGM_meta_get_attribute_by_name(nullptr, "sym_output", "power_uncertainty_observer", "energized");
+PGM_MetaAttribute const* const PGM_def_sym_output_power_uncertainty_observer_p_sigma = PGM_meta_get_attribute_by_name(nullptr, "sym_output", "power_uncertainty_observer", "p_sigma");
+PGM_MetaAttribute const* const PGM_def_sym_output_power_uncertainty_observer_q_sigma = PGM_meta_get_attribute_by_name(nullptr, "sym_output", "power_uncertainty_observer", "q_sigma");
+// component current_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_sym_output_current_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "sym_output", "current_uncertainty_observer");
+// attributes of sym_output current_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_sym_output_current_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "sym_output", "current_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_sym_output_current_uncertainty_observer_energized = PGM_meta_get_attribute_by_name(nullptr, "sym_output", "current_uncertainty_observer", "energized");
+PGM_MetaAttribute const* const PGM_def_sym_output_current_uncertainty_observer_i_sigma = PGM_meta_get_attribute_by_name(nullptr, "sym_output", "current_uncertainty_observer", "i_sigma");
+PGM_MetaAttribute const* const PGM_def_sym_output_current_uncertainty_observer_i_angle_sigma = PGM_meta_get_attribute_by_name(nullptr, "sym_output", "current_uncertainty_observer", "i_angle_sigma");
 // dataset asym_output
 PGM_MetaDataset const* const PGM_def_asym_output = PGM_meta_get_dataset_by_name(nullptr, "asym_output");
 // components of asym_output
@@ -776,6 +817,27 @@ PGM_MetaComponent const* const PGM_def_asym_output_fault = PGM_meta_get_componen
 // attributes of asym_output fault
 PGM_MetaAttribute const* const PGM_def_asym_output_fault_id = PGM_meta_get_attribute_by_name(nullptr, "asym_output", "fault", "id");
 PGM_MetaAttribute const* const PGM_def_asym_output_fault_energized = PGM_meta_get_attribute_by_name(nullptr, "asym_output", "fault", "energized");
+// component voltage_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_asym_output_voltage_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "asym_output", "voltage_uncertainty_observer");
+// attributes of asym_output voltage_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_asym_output_voltage_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "asym_output", "voltage_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_asym_output_voltage_uncertainty_observer_energized = PGM_meta_get_attribute_by_name(nullptr, "asym_output", "voltage_uncertainty_observer", "energized");
+PGM_MetaAttribute const* const PGM_def_asym_output_voltage_uncertainty_observer_u_sigma = PGM_meta_get_attribute_by_name(nullptr, "asym_output", "voltage_uncertainty_observer", "u_sigma");
+PGM_MetaAttribute const* const PGM_def_asym_output_voltage_uncertainty_observer_u_angle_sigma = PGM_meta_get_attribute_by_name(nullptr, "asym_output", "voltage_uncertainty_observer", "u_angle_sigma");
+// component power_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_asym_output_power_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "asym_output", "power_uncertainty_observer");
+// attributes of asym_output power_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_asym_output_power_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "asym_output", "power_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_asym_output_power_uncertainty_observer_energized = PGM_meta_get_attribute_by_name(nullptr, "asym_output", "power_uncertainty_observer", "energized");
+PGM_MetaAttribute const* const PGM_def_asym_output_power_uncertainty_observer_p_sigma = PGM_meta_get_attribute_by_name(nullptr, "asym_output", "power_uncertainty_observer", "p_sigma");
+PGM_MetaAttribute const* const PGM_def_asym_output_power_uncertainty_observer_q_sigma = PGM_meta_get_attribute_by_name(nullptr, "asym_output", "power_uncertainty_observer", "q_sigma");
+// component current_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_asym_output_current_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "asym_output", "current_uncertainty_observer");
+// attributes of asym_output current_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_asym_output_current_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "asym_output", "current_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_asym_output_current_uncertainty_observer_energized = PGM_meta_get_attribute_by_name(nullptr, "asym_output", "current_uncertainty_observer", "energized");
+PGM_MetaAttribute const* const PGM_def_asym_output_current_uncertainty_observer_i_sigma = PGM_meta_get_attribute_by_name(nullptr, "asym_output", "current_uncertainty_observer", "i_sigma");
+PGM_MetaAttribute const* const PGM_def_asym_output_current_uncertainty_observer_i_angle_sigma = PGM_meta_get_attribute_by_name(nullptr, "asym_output", "current_uncertainty_observer", "i_angle_sigma");
 // dataset update
 PGM_MetaDataset const* const PGM_def_update = PGM_meta_get_dataset_by_name(nullptr, "update");
 // components of update
@@ -934,6 +996,21 @@ PGM_MetaAttribute const* const PGM_def_update_fault_fault_phase = PGM_meta_get_a
 PGM_MetaAttribute const* const PGM_def_update_fault_fault_object = PGM_meta_get_attribute_by_name(nullptr, "update", "fault", "fault_object");
 PGM_MetaAttribute const* const PGM_def_update_fault_r_f = PGM_meta_get_attribute_by_name(nullptr, "update", "fault", "r_f");
 PGM_MetaAttribute const* const PGM_def_update_fault_x_f = PGM_meta_get_attribute_by_name(nullptr, "update", "fault", "x_f");
+// component voltage_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_update_voltage_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "update", "voltage_uncertainty_observer");
+// attributes of update voltage_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_update_voltage_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "update", "voltage_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_update_voltage_uncertainty_observer_status = PGM_meta_get_attribute_by_name(nullptr, "update", "voltage_uncertainty_observer", "status");
+// component power_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_update_power_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "update", "power_uncertainty_observer");
+// attributes of update power_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_update_power_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "update", "power_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_update_power_uncertainty_observer_status = PGM_meta_get_attribute_by_name(nullptr, "update", "power_uncertainty_observer", "status");
+// component current_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_update_current_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "update", "current_uncertainty_observer");
+// attributes of update current_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_update_current_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "update", "current_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_update_current_uncertainty_observer_status = PGM_meta_get_attribute_by_name(nullptr, "update", "current_uncertainty_observer", "status");
 // dataset sc_output
 PGM_MetaDataset const* const PGM_def_sc_output = PGM_meta_get_dataset_by_name(nullptr, "sc_output");
 // components of sc_output
@@ -1071,5 +1148,20 @@ PGM_MetaAttribute const* const PGM_def_sc_output_fault_id = PGM_meta_get_attribu
 PGM_MetaAttribute const* const PGM_def_sc_output_fault_energized = PGM_meta_get_attribute_by_name(nullptr, "sc_output", "fault", "energized");
 PGM_MetaAttribute const* const PGM_def_sc_output_fault_i_f = PGM_meta_get_attribute_by_name(nullptr, "sc_output", "fault", "i_f");
 PGM_MetaAttribute const* const PGM_def_sc_output_fault_i_f_angle = PGM_meta_get_attribute_by_name(nullptr, "sc_output", "fault", "i_f_angle");
+// component voltage_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_sc_output_voltage_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "sc_output", "voltage_uncertainty_observer");
+// attributes of sc_output voltage_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_sc_output_voltage_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "sc_output", "voltage_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_sc_output_voltage_uncertainty_observer_energized = PGM_meta_get_attribute_by_name(nullptr, "sc_output", "voltage_uncertainty_observer", "energized");
+// component power_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_sc_output_power_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "sc_output", "power_uncertainty_observer");
+// attributes of sc_output power_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_sc_output_power_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "sc_output", "power_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_sc_output_power_uncertainty_observer_energized = PGM_meta_get_attribute_by_name(nullptr, "sc_output", "power_uncertainty_observer", "energized");
+// component current_uncertainty_observer
+PGM_MetaComponent const* const PGM_def_sc_output_current_uncertainty_observer = PGM_meta_get_component_by_name(nullptr, "sc_output", "current_uncertainty_observer");
+// attributes of sc_output current_uncertainty_observer
+PGM_MetaAttribute const* const PGM_def_sc_output_current_uncertainty_observer_id = PGM_meta_get_attribute_by_name(nullptr, "sc_output", "current_uncertainty_observer", "id");
+PGM_MetaAttribute const* const PGM_def_sc_output_current_uncertainty_observer_energized = PGM_meta_get_attribute_by_name(nullptr, "sc_output", "current_uncertainty_observer", "energized");
 //
 // clang-format on

@@ -272,6 +272,72 @@ struct CurrentSensorOutput {
 using SymCurrentSensorOutput = CurrentSensorOutput<symmetric_t>;
 using AsymCurrentSensorOutput = CurrentSensorOutput<asymmetric_t>;
 
+struct VoltageUncertaintyObserverOutput {
+    ID id{na_IntID};  // ID of the object
+    IntS energized{na_IntS};  // whether the object is energized
+    double u_sigma{nan};  // standard deviation of estimated voltage magnitude and angle
+    double u_angle_sigma{nan};  // standard deviation of estimated voltage magnitude and angle
+
+    // implicit conversions to BaseOutput
+    operator BaseOutput&() { return reinterpret_cast<BaseOutput&>(*this); }
+    operator BaseOutput const&() const { return reinterpret_cast<BaseOutput const&>(*this); }
+};
+
+struct PowerUncertaintyObserverOutput {
+    ID id{na_IntID};  // ID of the object
+    IntS energized{na_IntS};  // whether the object is energized
+    double p_sigma{nan};  // standard deviation of estimated active and reactive power
+    double q_sigma{nan};  // standard deviation of estimated active and reactive power
+
+    // implicit conversions to BaseOutput
+    operator BaseOutput&() { return reinterpret_cast<BaseOutput&>(*this); }
+    operator BaseOutput const&() const { return reinterpret_cast<BaseOutput const&>(*this); }
+};
+
+struct CurrentUncertaintyObserverOutput {
+    ID id{na_IntID};  // ID of the object
+    IntS energized{na_IntS};  // whether the object is energized
+    double i_sigma{nan};  // standard deviation of estimated current magnitude and angle
+    double i_angle_sigma{nan};  // standard deviation of estimated current magnitude and angle
+
+    // implicit conversions to BaseOutput
+    operator BaseOutput&() { return reinterpret_cast<BaseOutput&>(*this); }
+    operator BaseOutput const&() const { return reinterpret_cast<BaseOutput const&>(*this); }
+};
+
+struct AsymVoltageUncertaintyObserverOutput {
+    ID id{na_IntID};  // ID of the object
+    IntS energized{na_IntS};  // whether the object is energized
+    RealValue<asymmetric_t> u_sigma{nan};  // standard deviation of estimated voltage magnitude and angle
+    RealValue<asymmetric_t> u_angle_sigma{nan};  // standard deviation of estimated voltage magnitude and angle
+
+    // implicit conversions to BaseOutput
+    operator BaseOutput&() { return reinterpret_cast<BaseOutput&>(*this); }
+    operator BaseOutput const&() const { return reinterpret_cast<BaseOutput const&>(*this); }
+};
+
+struct AsymPowerUncertaintyObserverOutput {
+    ID id{na_IntID};  // ID of the object
+    IntS energized{na_IntS};  // whether the object is energized
+    RealValue<asymmetric_t> p_sigma{nan};  // standard deviation of estimated active and reactive power
+    RealValue<asymmetric_t> q_sigma{nan};  // standard deviation of estimated active and reactive power
+
+    // implicit conversions to BaseOutput
+    operator BaseOutput&() { return reinterpret_cast<BaseOutput&>(*this); }
+    operator BaseOutput const&() const { return reinterpret_cast<BaseOutput const&>(*this); }
+};
+
+struct AsymCurrentUncertaintyObserverOutput {
+    ID id{na_IntID};  // ID of the object
+    IntS energized{na_IntS};  // whether the object is energized
+    RealValue<asymmetric_t> i_sigma{nan};  // standard deviation of estimated current magnitude and angle
+    RealValue<asymmetric_t> i_angle_sigma{nan};  // standard deviation of estimated current magnitude and angle
+
+    // implicit conversions to BaseOutput
+    operator BaseOutput&() { return reinterpret_cast<BaseOutput&>(*this); }
+    operator BaseOutput const&() const { return reinterpret_cast<BaseOutput const&>(*this); }
+};
+
 
 
 } // namespace power_grid_model

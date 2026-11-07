@@ -89,6 +89,10 @@ template <symmetry_tag sym> struct StateEstimationUQResult {
     std::vector<InjectionUQResult<sym>> injection;
     std::vector<UQPairDiagnostic> pairs;
 };
+template <symmetry_tag sym> struct StateEstimationUQWork {
+    StateEstimationUQRequest request;
+    StateEstimationUQResult<sym> result;
+};
 // Non-owning request/result context passed to run_state_estimation for one island.
 template <symmetry_tag sym> struct StateEstimationUQContext {
     StateEstimationUQRequest const& request;

@@ -21,6 +21,7 @@
 #include "../component/link.hpp"
 #include "../component/load_gen.hpp"
 #include "../component/node.hpp"
+#include "../component/observer.hpp"
 #include "../component/power_sensor.hpp"
 #include "../component/shunt.hpp"
 #include "../component/source.hpp"
@@ -166,6 +167,9 @@ inline void add_component(ComponentContainer& components, Inputs component_input
             double const u_rated = get_component<Node>(components, node).u_rated();
 
             emplace_component<Component>(components, id, input, u_rated);
+        } else if constexpr (std::derived_from<Component, Observer>) {
+            // Resolve targets after all component categories have been constructed.
+            emplace_component<Component>(components, id, input);
         } else if constexpr (std::derived_from<Component, Fault>) {
             // check that fault object exists (currently, only faults at nodes are supported)
             get_component<Node>(components, input.fault_object);

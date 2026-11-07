@@ -26,7 +26,7 @@ template<>
 struct get_attributes_list<BaseInput> {
     static constexpr std::array<MetaAttribute, 1> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&BaseInput::id>(offsetof(BaseInput, id), "id"),
     };
 };
@@ -35,7 +35,7 @@ template<>
 struct get_attributes_list<NodeInput> {
     static constexpr std::array<MetaAttribute, 2> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&NodeInput::id>(offsetof(NodeInput, id), "id"),
             meta_data_gen::get_meta_attribute<&NodeInput::u_rated>(offsetof(NodeInput, u_rated), "u_rated"),
     };
@@ -45,7 +45,7 @@ template<>
 struct get_attributes_list<BranchInput> {
     static constexpr std::array<MetaAttribute, 5> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&BranchInput::id>(offsetof(BranchInput, id), "id"),
             meta_data_gen::get_meta_attribute<&BranchInput::from_node>(offsetof(BranchInput, from_node), "from_node"),
             meta_data_gen::get_meta_attribute<&BranchInput::to_node>(offsetof(BranchInput, to_node), "to_node"),
@@ -58,7 +58,7 @@ template<>
 struct get_attributes_list<Branch3Input> {
     static constexpr std::array<MetaAttribute, 7> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&Branch3Input::id>(offsetof(Branch3Input, id), "id"),
             meta_data_gen::get_meta_attribute<&Branch3Input::node_1>(offsetof(Branch3Input, node_1), "node_1"),
             meta_data_gen::get_meta_attribute<&Branch3Input::node_2>(offsetof(Branch3Input, node_2), "node_2"),
@@ -73,7 +73,7 @@ template<>
 struct get_attributes_list<SensorInput> {
     static constexpr std::array<MetaAttribute, 2> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&SensorInput::id>(offsetof(SensorInput, id), "id"),
             meta_data_gen::get_meta_attribute<&SensorInput::measured_object>(offsetof(SensorInput, measured_object), "measured_object"),
     };
@@ -83,7 +83,7 @@ template<>
 struct get_attributes_list<ApplianceInput> {
     static constexpr std::array<MetaAttribute, 3> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&ApplianceInput::id>(offsetof(ApplianceInput, id), "id"),
             meta_data_gen::get_meta_attribute<&ApplianceInput::node>(offsetof(ApplianceInput, node), "node"),
             meta_data_gen::get_meta_attribute<&ApplianceInput::status>(offsetof(ApplianceInput, status), "status"),
@@ -94,7 +94,7 @@ template<>
 struct get_attributes_list<LineInput> {
     static constexpr std::array<MetaAttribute, 14> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&LineInput::id>(offsetof(LineInput, id), "id"),
             meta_data_gen::get_meta_attribute<&LineInput::from_node>(offsetof(LineInput, from_node), "from_node"),
             meta_data_gen::get_meta_attribute<&LineInput::to_node>(offsetof(LineInput, to_node), "to_node"),
@@ -116,7 +116,7 @@ template<>
 struct get_attributes_list<AsymLineInput> {
     static constexpr std::array<MetaAttribute, 34> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&AsymLineInput::id>(offsetof(AsymLineInput, id), "id"),
             meta_data_gen::get_meta_attribute<&AsymLineInput::from_node>(offsetof(AsymLineInput, from_node), "from_node"),
             meta_data_gen::get_meta_attribute<&AsymLineInput::to_node>(offsetof(AsymLineInput, to_node), "to_node"),
@@ -158,7 +158,7 @@ template<>
 struct get_attributes_list<GenericBranchInput> {
     static constexpr std::array<MetaAttribute, 12> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&GenericBranchInput::id>(offsetof(GenericBranchInput, id), "id"),
             meta_data_gen::get_meta_attribute<&GenericBranchInput::from_node>(offsetof(GenericBranchInput, from_node), "from_node"),
             meta_data_gen::get_meta_attribute<&GenericBranchInput::to_node>(offsetof(GenericBranchInput, to_node), "to_node"),
@@ -178,7 +178,7 @@ template<>
 struct get_attributes_list<LinkInput> {
     static constexpr std::array<MetaAttribute, 5> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&LinkInput::id>(offsetof(LinkInput, id), "id"),
             meta_data_gen::get_meta_attribute<&LinkInput::from_node>(offsetof(LinkInput, from_node), "from_node"),
             meta_data_gen::get_meta_attribute<&LinkInput::to_node>(offsetof(LinkInput, to_node), "to_node"),
@@ -191,7 +191,7 @@ template<>
 struct get_attributes_list<TransformerInput> {
     static constexpr std::array<MetaAttribute, 31> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&TransformerInput::id>(offsetof(TransformerInput, id), "id"),
             meta_data_gen::get_meta_attribute<&TransformerInput::from_node>(offsetof(TransformerInput, from_node), "from_node"),
             meta_data_gen::get_meta_attribute<&TransformerInput::to_node>(offsetof(TransformerInput, to_node), "to_node"),
@@ -230,7 +230,7 @@ template<>
 struct get_attributes_list<ThreeWindingTransformerInput> {
     static constexpr std::array<MetaAttribute, 50> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&ThreeWindingTransformerInput::id>(offsetof(ThreeWindingTransformerInput, id), "id"),
             meta_data_gen::get_meta_attribute<&ThreeWindingTransformerInput::node_1>(offsetof(ThreeWindingTransformerInput, node_1), "node_1"),
             meta_data_gen::get_meta_attribute<&ThreeWindingTransformerInput::node_2>(offsetof(ThreeWindingTransformerInput, node_2), "node_2"),
@@ -288,7 +288,7 @@ template<>
 struct get_attributes_list<GenericLoadGenInput> {
     static constexpr std::array<MetaAttribute, 4> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&GenericLoadGenInput::id>(offsetof(GenericLoadGenInput, id), "id"),
             meta_data_gen::get_meta_attribute<&GenericLoadGenInput::node>(offsetof(GenericLoadGenInput, node), "node"),
             meta_data_gen::get_meta_attribute<&GenericLoadGenInput::status>(offsetof(GenericLoadGenInput, status), "status"),
@@ -302,7 +302,7 @@ struct get_attributes_list<LoadGenInput<sym_type>> {
 
     static constexpr std::array<MetaAttribute, 6> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&LoadGenInput<sym>::id>(offsetof(LoadGenInput<sym>, id), "id"),
             meta_data_gen::get_meta_attribute<&LoadGenInput<sym>::node>(offsetof(LoadGenInput<sym>, node), "node"),
             meta_data_gen::get_meta_attribute<&LoadGenInput<sym>::status>(offsetof(LoadGenInput<sym>, status), "status"),
@@ -316,7 +316,7 @@ template<>
 struct get_attributes_list<ShuntInput> {
     static constexpr std::array<MetaAttribute, 7> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&ShuntInput::id>(offsetof(ShuntInput, id), "id"),
             meta_data_gen::get_meta_attribute<&ShuntInput::node>(offsetof(ShuntInput, node), "node"),
             meta_data_gen::get_meta_attribute<&ShuntInput::status>(offsetof(ShuntInput, status), "status"),
@@ -331,7 +331,7 @@ template<>
 struct get_attributes_list<SourceInput> {
     static constexpr std::array<MetaAttribute, 8> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&SourceInput::id>(offsetof(SourceInput, id), "id"),
             meta_data_gen::get_meta_attribute<&SourceInput::node>(offsetof(SourceInput, node), "node"),
             meta_data_gen::get_meta_attribute<&SourceInput::status>(offsetof(SourceInput, status), "status"),
@@ -347,7 +347,7 @@ template<>
 struct get_attributes_list<GenericVoltageSensorInput> {
     static constexpr std::array<MetaAttribute, 3> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&GenericVoltageSensorInput::id>(offsetof(GenericVoltageSensorInput, id), "id"),
             meta_data_gen::get_meta_attribute<&GenericVoltageSensorInput::measured_object>(offsetof(GenericVoltageSensorInput, measured_object), "measured_object"),
             meta_data_gen::get_meta_attribute<&GenericVoltageSensorInput::u_sigma>(offsetof(GenericVoltageSensorInput, u_sigma), "u_sigma"),
@@ -360,7 +360,7 @@ struct get_attributes_list<VoltageSensorInput<sym_type>> {
 
     static constexpr std::array<MetaAttribute, 5> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&VoltageSensorInput<sym>::id>(offsetof(VoltageSensorInput<sym>, id), "id"),
             meta_data_gen::get_meta_attribute<&VoltageSensorInput<sym>::measured_object>(offsetof(VoltageSensorInput<sym>, measured_object), "measured_object"),
             meta_data_gen::get_meta_attribute<&VoltageSensorInput<sym>::u_sigma>(offsetof(VoltageSensorInput<sym>, u_sigma), "u_sigma"),
@@ -373,7 +373,7 @@ template<>
 struct get_attributes_list<GenericPowerSensorInput> {
     static constexpr std::array<MetaAttribute, 4> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&GenericPowerSensorInput::id>(offsetof(GenericPowerSensorInput, id), "id"),
             meta_data_gen::get_meta_attribute<&GenericPowerSensorInput::measured_object>(offsetof(GenericPowerSensorInput, measured_object), "measured_object"),
             meta_data_gen::get_meta_attribute<&GenericPowerSensorInput::measured_terminal_type>(offsetof(GenericPowerSensorInput, measured_terminal_type), "measured_terminal_type"),
@@ -387,7 +387,7 @@ struct get_attributes_list<PowerSensorInput<sym_type>> {
 
     static constexpr std::array<MetaAttribute, 8> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&PowerSensorInput<sym>::id>(offsetof(PowerSensorInput<sym>, id), "id"),
             meta_data_gen::get_meta_attribute<&PowerSensorInput<sym>::measured_object>(offsetof(PowerSensorInput<sym>, measured_object), "measured_object"),
             meta_data_gen::get_meta_attribute<&PowerSensorInput<sym>::measured_terminal_type>(offsetof(PowerSensorInput<sym>, measured_terminal_type), "measured_terminal_type"),
@@ -403,7 +403,7 @@ template<>
 struct get_attributes_list<FaultInput> {
     static constexpr std::array<MetaAttribute, 7> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&FaultInput::id>(offsetof(FaultInput, id), "id"),
             meta_data_gen::get_meta_attribute<&FaultInput::status>(offsetof(FaultInput, status), "status"),
             meta_data_gen::get_meta_attribute<&FaultInput::fault_type>(offsetof(FaultInput, fault_type), "fault_type"),
@@ -418,7 +418,7 @@ template<>
 struct get_attributes_list<RegulatorInput> {
     static constexpr std::array<MetaAttribute, 3> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&RegulatorInput::id>(offsetof(RegulatorInput, id), "id"),
             meta_data_gen::get_meta_attribute<&RegulatorInput::regulated_object>(offsetof(RegulatorInput, regulated_object), "regulated_object"),
             meta_data_gen::get_meta_attribute<&RegulatorInput::status>(offsetof(RegulatorInput, status), "status"),
@@ -429,7 +429,7 @@ template<>
 struct get_attributes_list<TransformerTapRegulatorInput> {
     static constexpr std::array<MetaAttribute, 8> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&TransformerTapRegulatorInput::id>(offsetof(TransformerTapRegulatorInput, id), "id"),
             meta_data_gen::get_meta_attribute<&TransformerTapRegulatorInput::regulated_object>(offsetof(TransformerTapRegulatorInput, regulated_object), "regulated_object"),
             meta_data_gen::get_meta_attribute<&TransformerTapRegulatorInput::status>(offsetof(TransformerTapRegulatorInput, status), "status"),
@@ -445,7 +445,7 @@ template<>
 struct get_attributes_list<VoltageRegulatorInput> {
     static constexpr std::array<MetaAttribute, 6> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&VoltageRegulatorInput::id>(offsetof(VoltageRegulatorInput, id), "id"),
             meta_data_gen::get_meta_attribute<&VoltageRegulatorInput::regulated_object>(offsetof(VoltageRegulatorInput, regulated_object), "regulated_object"),
             meta_data_gen::get_meta_attribute<&VoltageRegulatorInput::status>(offsetof(VoltageRegulatorInput, status), "status"),
@@ -459,7 +459,7 @@ template<>
 struct get_attributes_list<GenericCurrentSensorInput> {
     static constexpr std::array<MetaAttribute, 6> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&GenericCurrentSensorInput::id>(offsetof(GenericCurrentSensorInput, id), "id"),
             meta_data_gen::get_meta_attribute<&GenericCurrentSensorInput::measured_object>(offsetof(GenericCurrentSensorInput, measured_object), "measured_object"),
             meta_data_gen::get_meta_attribute<&GenericCurrentSensorInput::measured_terminal_type>(offsetof(GenericCurrentSensorInput, measured_terminal_type), "measured_terminal_type"),
@@ -475,7 +475,7 @@ struct get_attributes_list<CurrentSensorInput<sym_type>> {
 
     static constexpr std::array<MetaAttribute, 8> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&CurrentSensorInput<sym>::id>(offsetof(CurrentSensorInput<sym>, id), "id"),
             meta_data_gen::get_meta_attribute<&CurrentSensorInput<sym>::measured_object>(offsetof(CurrentSensorInput<sym>, measured_object), "measured_object"),
             meta_data_gen::get_meta_attribute<&CurrentSensorInput<sym>::measured_terminal_type>(offsetof(CurrentSensorInput<sym>, measured_terminal_type), "measured_terminal_type"),
@@ -484,6 +484,52 @@ struct get_attributes_list<CurrentSensorInput<sym_type>> {
             meta_data_gen::get_meta_attribute<&CurrentSensorInput<sym>::i_angle_sigma>(offsetof(CurrentSensorInput<sym>, i_angle_sigma), "i_angle_sigma"),
             meta_data_gen::get_meta_attribute<&CurrentSensorInput<sym>::i_measured>(offsetof(CurrentSensorInput<sym>, i_measured), "i_measured"),
             meta_data_gen::get_meta_attribute<&CurrentSensorInput<sym>::i_angle_measured>(offsetof(CurrentSensorInput<sym>, i_angle_measured), "i_angle_measured"),
+    };
+};
+
+template<>
+struct get_attributes_list<ObserverInput> {
+    static constexpr std::array<MetaAttribute, 3> value{
+            // all attributes including base class
+
+            meta_data_gen::get_meta_attribute<&ObserverInput::id>(offsetof(ObserverInput, id), "id"),
+            meta_data_gen::get_meta_attribute<&ObserverInput::observed_object>(offsetof(ObserverInput, observed_object), "observed_object"),
+            meta_data_gen::get_meta_attribute<&ObserverInput::status>(offsetof(ObserverInput, status), "status"),
+    };
+};
+
+template<>
+struct get_attributes_list<VoltageUncertaintyObserverInput> {
+    static constexpr std::array<MetaAttribute, 3> value{
+            // all attributes including base class
+
+            meta_data_gen::get_meta_attribute<&VoltageUncertaintyObserverInput::id>(offsetof(VoltageUncertaintyObserverInput, id), "id"),
+            meta_data_gen::get_meta_attribute<&VoltageUncertaintyObserverInput::observed_object>(offsetof(VoltageUncertaintyObserverInput, observed_object), "observed_object"),
+            meta_data_gen::get_meta_attribute<&VoltageUncertaintyObserverInput::status>(offsetof(VoltageUncertaintyObserverInput, status), "status"),
+    };
+};
+
+template<>
+struct get_attributes_list<PowerUncertaintyObserverInput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverInput::id>(offsetof(PowerUncertaintyObserverInput, id), "id"),
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverInput::observed_object>(offsetof(PowerUncertaintyObserverInput, observed_object), "observed_object"),
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverInput::status>(offsetof(PowerUncertaintyObserverInput, status), "status"),
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverInput::observed_terminal_type>(offsetof(PowerUncertaintyObserverInput, observed_terminal_type), "observed_terminal_type"),
+    };
+};
+
+template<>
+struct get_attributes_list<CurrentUncertaintyObserverInput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverInput::id>(offsetof(CurrentUncertaintyObserverInput, id), "id"),
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverInput::observed_object>(offsetof(CurrentUncertaintyObserverInput, observed_object), "observed_object"),
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverInput::status>(offsetof(CurrentUncertaintyObserverInput, status), "status"),
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverInput::observed_terminal_type>(offsetof(CurrentUncertaintyObserverInput, observed_terminal_type), "observed_terminal_type"),
     };
 };
 

@@ -552,6 +552,60 @@ struct CurrentSensorInput {
 using SymCurrentSensorInput = CurrentSensorInput<symmetric_t>;
 using AsymCurrentSensorInput = CurrentSensorInput<asymmetric_t>;
 
+struct ObserverInput {
+    ID id{na_IntID};  // ID of the object
+    ID observed_object{na_IntID};  // ID of the observed object
+    IntS status{na_IntS};  // whether the observer is enabled
+
+    // implicit conversions to BaseInput
+    operator BaseInput&() { return reinterpret_cast<BaseInput&>(*this); }
+    operator BaseInput const&() const { return reinterpret_cast<BaseInput const&>(*this); }
+};
+
+struct VoltageUncertaintyObserverInput {
+    ID id{na_IntID};  // ID of the object
+    ID observed_object{na_IntID};  // ID of the observed object
+    IntS status{na_IntS};  // whether the observer is enabled
+
+    // implicit conversions to BaseInput
+    operator BaseInput&() { return reinterpret_cast<BaseInput&>(*this); }
+    operator BaseInput const&() const { return reinterpret_cast<BaseInput const&>(*this); }
+
+    // implicit conversions to ObserverInput
+    operator ObserverInput&() { return reinterpret_cast<ObserverInput&>(*this); }
+    operator ObserverInput const&() const { return reinterpret_cast<ObserverInput const&>(*this); }
+};
+
+struct PowerUncertaintyObserverInput {
+    ID id{na_IntID};  // ID of the object
+    ID observed_object{na_IntID};  // ID of the observed object
+    IntS status{na_IntS};  // whether the observer is enabled
+    ObservedTerminalType observed_terminal_type{static_cast<ObservedTerminalType>(na_IntS)};  // type of observed terminal
+
+    // implicit conversions to BaseInput
+    operator BaseInput&() { return reinterpret_cast<BaseInput&>(*this); }
+    operator BaseInput const&() const { return reinterpret_cast<BaseInput const&>(*this); }
+
+    // implicit conversions to ObserverInput
+    operator ObserverInput&() { return reinterpret_cast<ObserverInput&>(*this); }
+    operator ObserverInput const&() const { return reinterpret_cast<ObserverInput const&>(*this); }
+};
+
+struct CurrentUncertaintyObserverInput {
+    ID id{na_IntID};  // ID of the object
+    ID observed_object{na_IntID};  // ID of the observed object
+    IntS status{na_IntS};  // whether the observer is enabled
+    ObservedTerminalType observed_terminal_type{static_cast<ObservedTerminalType>(na_IntS)};  // type of observed terminal
+
+    // implicit conversions to BaseInput
+    operator BaseInput&() { return reinterpret_cast<BaseInput&>(*this); }
+    operator BaseInput const&() const { return reinterpret_cast<BaseInput const&>(*this); }
+
+    // implicit conversions to ObserverInput
+    operator ObserverInput&() { return reinterpret_cast<ObserverInput&>(*this); }
+    operator ObserverInput const&() const { return reinterpret_cast<ObserverInput const&>(*this); }
+};
+
 
 
 } // namespace power_grid_model

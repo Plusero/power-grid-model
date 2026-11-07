@@ -266,6 +266,90 @@
           "description": "deviation between the measured value and calculated value"
         }
       ]
+    },
+    {
+      "name": "VoltageUncertaintyObserverOutput",
+      "base": "BaseOutput",
+      "attributes": [
+        {
+          "data_type": "double",
+          "names": [
+            "u_sigma",
+            "u_angle_sigma"
+          ],
+          "description": "standard deviation of estimated voltage magnitude and angle"
+        }
+      ]
+    },
+    {
+      "name": "PowerUncertaintyObserverOutput",
+      "base": "BaseOutput",
+      "attributes": [
+        {
+          "data_type": "double",
+          "names": [
+            "p_sigma",
+            "q_sigma"
+          ],
+          "description": "standard deviation of estimated active and reactive power"
+        }
+      ]
+    },
+    {
+      "name": "CurrentUncertaintyObserverOutput",
+      "base": "BaseOutput",
+      "attributes": [
+        {
+          "data_type": "double",
+          "names": [
+            "i_sigma",
+            "i_angle_sigma"
+          ],
+          "description": "standard deviation of estimated current magnitude and angle"
+        }
+      ]
+    },
+    {
+      "name": "AsymVoltageUncertaintyObserverOutput",
+      "base": "BaseOutput",
+      "attributes": [
+        {
+          "data_type": "RealValue<asymmetric_t>",
+          "names": [
+            "u_sigma",
+            "u_angle_sigma"
+          ],
+          "description": "standard deviation of estimated voltage magnitude and angle"
+        }
+      ]
+    },
+    {
+      "name": "AsymPowerUncertaintyObserverOutput",
+      "base": "BaseOutput",
+      "attributes": [
+        {
+          "data_type": "RealValue<asymmetric_t>",
+          "names": [
+            "p_sigma",
+            "q_sigma"
+          ],
+          "description": "standard deviation of estimated active and reactive power"
+        }
+      ]
+    },
+    {
+      "name": "AsymCurrentUncertaintyObserverOutput",
+      "base": "BaseOutput",
+      "attributes": [
+        {
+          "data_type": "RealValue<asymmetric_t>",
+          "names": [
+            "i_sigma",
+            "i_angle_sigma"
+          ],
+          "description": "standard deviation of estimated current magnitude and angle"
+        }
+      ]
     }
   ]
 }

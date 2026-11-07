@@ -9,6 +9,7 @@ add_executable(
     "test_main_core_update.cpp"
     "test_main_model_type.cpp"
     "test_topological_node_output.cpp"
+    "test_observer_uncertainty.cpp"
 )
 
 target_link_libraries(

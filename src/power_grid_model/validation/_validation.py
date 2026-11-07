@@ -40,6 +40,7 @@ from power_grid_model.enum import (
     FaultType,
     LoadGenType,
     MeasuredTerminalType,
+    ObservedTerminalType,
     WindingType,
 )
 from power_grid_model.validation._rules import (
@@ -443,6 +444,11 @@ def validate_required_values(  # noqa: PLR0915
     for sensor_type in (CT.sym_power_sensor, CT.asym_power_sensor):
         required[sensor_type] = required["power_sensor"].copy()
 
+    # Observer identity, target and activation are required for every calculation.
+    required[CT.voltage_uncertainty_observer] = required["base"] + [AT.observed_object, AT.status]
+    required[CT.power_uncertainty_observer] = required[CT.voltage_uncertainty_observer] + [AT.observed_terminal_type]
+    required[CT.current_uncertainty_observer] = required[CT.power_uncertainty_observer].copy()
+
     # Faults
     required[CT.fault] = required["base"] + [AT.fault_object]
     asym_sc = False
@@ -589,6 +595,9 @@ def validate_values(data: SingleDataset, calculation_type: CalculationType | Non
         CT.asym_gen: lambda d: validate_generic_load_gen(d, CT.asym_gen),
         CT.shunt: validate_shunt,
         CT.voltage_regulator: validate_voltage_regulator,
+        CT.voltage_uncertainty_observer: lambda d: validate_uncertainty_observer(d, CT.voltage_uncertainty_observer),
+        CT.power_uncertainty_observer: lambda d: validate_uncertainty_observer(d, CT.power_uncertainty_observer),
+        CT.current_uncertainty_observer: lambda d: validate_uncertainty_observer(d, CT.current_uncertainty_observer),
     }
 
     for component, validator in component_validators.items():
@@ -625,6 +634,30 @@ def validate_values(data: SingleDataset, calculation_type: CalculationType | Non
 
 def validate_base(data: SingleDataset, component: CT) -> list[ValidationError]:
     errors: list[ValidationError] = list(_all_unique(data, component, AT.id))
+    return errors
+
+
+def validate_uncertainty_observer(data: SingleDataset, component: CT) -> list[ValidationError]:
+    """Validate observer structure independently of calculation and output selection."""
+    errors = validate_base(data, component)
+    errors += _all_boolean(data, component, AT.status)
+    if component == CT.voltage_uncertainty_observer:
+        return errors + _all_valid_ids(data, component, AT.observed_object, CT.node)
+
+    errors += _all_valid_enum_values(data, component, AT.observed_terminal_type, ObservedTerminalType)
+    branch_types = [CT.line, CT.asym_line, CT.generic_branch, CT.transformer]
+    allowed_types = [*branch_types, CT.three_winding_transformer]
+    if component == CT.power_uncertainty_observer:
+        allowed_types += [CT.node]
+    errors += _all_valid_ids(data, component, AT.observed_object, allowed_types)
+    for terminal in ObservedTerminalType:
+        if terminal == ObservedTerminalType.node_injection:
+            target_types = [CT.node] if component == CT.power_uncertainty_observer else []
+        elif terminal in (ObservedTerminalType.branch_from, ObservedTerminalType.branch_to):
+            target_types = branch_types
+        else:
+            target_types = [CT.three_winding_transformer]
+        errors += _all_valid_ids(data, component, AT.observed_object, target_types, observed_terminal_type=terminal)
     return errors
 
 

@@ -794,6 +794,86 @@ scenarios within a batch are not three-phase faults (i.e. `fault_type` is not `F
 
 `shunt` is modelled by a fixed admittance which equals to $g + \mathrm{j}b$.
 
+## Uncertainty observers
+
+* base: [base](#base)
+* type names: `voltage_uncertainty_observer`, `power_uncertainty_observer`, `current_uncertainty_observer`
+
+Observers request standard deviations of estimated quantities without adding measurements, constraints or electrical
+connections. Sensors still define the state estimator's modeled measurement errors.
+Observer output supports symmetric and asymmetric state estimation with `iterative_linear` or `newton_raphson`.
+
+#### Input and updates
+
+| name | data type | required | update | description |
+|---|---|:---:|:---:|---|
+| `observed_object` | `int32_t` | yes | no | ID of an existing permitted target |
+| `status` | `int8_t` | yes | yes | `1` enabled; `0` disabled |
+| `observed_terminal_type` | `int8_t` | power/current only | no | Terminal selector from the table below |
+
+Every observer requires its own globally unique `id`. Disabled observers still require valid targets and selectors.
+Updates contain only `id` and `status`; a missing status retains its previous value.
+The normal full-component positional-update rules apply when update IDs are omitted.
+
+Voltage observers accept only nodes and have no terminal selector.
+Power and current observers use `ObservedTerminalType`:
+
+| selector | code | target | observers |
+|---|---:|---|---|
+| `branch_from`, `branch_to` | 0, 1 | `line`, `asym_line`, `generic_branch`, `transformer` | power/current |
+| `branch3_1`, `branch3_2`, `branch3_3` | 6, 7, 8 | `three_winding_transformer`, selected physical side | power/current |
+| `node_injection` | 9 | `node`, net modeled injection | power |
+
+Appliances, ideal links, sensors and other observers are unsupported targets.
+An enabled, energized node-injection observer requesting a sigma raises a calculation error when closed ideal links
+fuse multiple physical nodes into its mathematical bus. Metadata-only requests and voltage observers remain supported
+on fused nodes.
+
+#### Symmetric state-estimation output
+
+All sigma attributes below are scalar doubles. Each output row retains its observer ID and input order.
+
+| component | attributes | units |
+|---|---|---|
+| voltage | `u_sigma`, `u_angle_sigma` | line-to-line V; rad |
+| power | `p_sigma`, `q_sigma` | total three-phase W; var |
+| current | `i_sigma`, `i_angle_sigma` | physical-terminal A; rad |
+
+#### Asymmetric state-estimation output
+
+`id` and `energized` stay scalar. Sigma attributes are three-entry arrays ordered a/b/c, and a selected sigma
+attribute requests all three phases. A phase can be missing while the other phases are valid.
+
+| component | attributes | units |
+|---|---|---|
+| voltage | `u_sigma`, `u_angle_sigma` | phase-to-neutral V; rad |
+| power | `p_sigma`, `q_sigma` | per-phase W; var |
+| current | `i_sigma`, `i_angle_sigma` | physical-terminal A per phase; rad |
+
+Phase sigmas do not provide line-to-line, total-power or sequence uncertainty, which need covariance cross terms.
+
+Angles use the estimated voltage reporting frame: absolute where available, otherwise relative to the island slack.
+Branch power/current use the direction into the selected branch terminal; node power uses injection direction.
+`energized` is `1` only when the observer is enabled and its selected target terminal is connected to a source.
+Disabled/disconnected rows have `energized=0` and missing sigmas.
+An energized row can also have missing sigmas for invalid or undefined derived quantities, including voltage
+magnitude/angle at zero voltage and current magnitude/angle at zero current.
+Processed exact-zero injection constraints report zero power sigmas; a noisy zero reading alone does not.
+
+Default state-estimation output includes observers in the model. Ordinary component/attribute selection controls demand:
+only requested sigma fields on enabled, energized targets trigger uncertainty work, and duplicate targets share work.
+Requests for only `id`/`energized` perform no uncertainty calculation.
+An explicit empty observer attribute list omits that component from Python output.
+Default power-flow/short-circuit output excludes observers; explicitly requesting observer output in either calculation
+or an unsupported method raises a calculation argument error, including metadata-only output.
+
+The sigmas describe the estimator's first-order modeled uncertainty, not confidence intervals or residuals.
+ILSE uses its frozen transformed-measurement and proper-complex voltage approximation; NRSE uses its local real polar
+model. Injection covariance completion may use approximation fallbacks, which are neither guaranteed exact nor
+conservative. `energized=1` establishes connectivity, not covariance validity or physical observability.
+Missing values use native/Python NaN and the existing serialization rules: compact output uses `null`, while default
+map output omits missing attributes.
+
 ## Sensor
 
 * type name: `sensor`

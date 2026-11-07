@@ -550,6 +550,49 @@
           "description": "measured current and current angle"
         }
       ]
+    },
+    {
+      "name": "ObserverInput",
+      "base": "BaseInput",
+      "attributes": [
+        {
+          "data_type": "ID",
+          "names": "observed_object",
+          "description": "ID of the observed object"
+        },
+        {
+          "data_type": "IntS",
+          "names": "status",
+          "description": "whether the observer is enabled"
+        }
+      ]
+    },
+    {
+      "name": "VoltageUncertaintyObserverInput",
+      "base": "ObserverInput",
+      "attributes": []
+    },
+    {
+      "name": "PowerUncertaintyObserverInput",
+      "base": "ObserverInput",
+      "attributes": [
+        {
+          "data_type": "ObservedTerminalType",
+          "names": "observed_terminal_type",
+          "description": "type of observed terminal"
+        }
+      ]
+    },
+    {
+      "name": "CurrentUncertaintyObserverInput",
+      "base": "ObserverInput",
+      "attributes": [
+        {
+          "data_type": "ObservedTerminalType",
+          "names": "observed_terminal_type",
+          "description": "type of observed terminal"
+        }
+      ]
     }
   ]
 }

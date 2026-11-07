@@ -26,7 +26,7 @@ template<>
 struct get_attributes_list<BaseOutput> {
     static constexpr std::array<MetaAttribute, 2> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&BaseOutput::id>(offsetof(BaseOutput, id), "id"),
             meta_data_gen::get_meta_attribute<&BaseOutput::energized>(offsetof(BaseOutput, energized), "energized"),
     };
@@ -38,7 +38,7 @@ struct get_attributes_list<NodeOutput<sym_type>> {
 
     static constexpr std::array<MetaAttribute, 7> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&NodeOutput<sym>::id>(offsetof(NodeOutput<sym>, id), "id"),
             meta_data_gen::get_meta_attribute<&NodeOutput<sym>::energized>(offsetof(NodeOutput<sym>, energized), "energized"),
             meta_data_gen::get_meta_attribute<&NodeOutput<sym>::u_pu>(offsetof(NodeOutput<sym>, u_pu), "u_pu"),
@@ -55,7 +55,7 @@ struct get_attributes_list<BranchOutput<sym_type>> {
 
     static constexpr std::array<MetaAttribute, 11> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&BranchOutput<sym>::id>(offsetof(BranchOutput<sym>, id), "id"),
             meta_data_gen::get_meta_attribute<&BranchOutput<sym>::energized>(offsetof(BranchOutput<sym>, energized), "energized"),
             meta_data_gen::get_meta_attribute<&BranchOutput<sym>::loading>(offsetof(BranchOutput<sym>, loading), "loading"),
@@ -76,7 +76,7 @@ struct get_attributes_list<Branch3Output<sym_type>> {
 
     static constexpr std::array<MetaAttribute, 18> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&Branch3Output<sym>::id>(offsetof(Branch3Output<sym>, id), "id"),
             meta_data_gen::get_meta_attribute<&Branch3Output<sym>::energized>(offsetof(Branch3Output<sym>, energized), "energized"),
             meta_data_gen::get_meta_attribute<&Branch3Output<sym>::loading_1>(offsetof(Branch3Output<sym>, loading_1), "loading_1"),
@@ -104,7 +104,7 @@ struct get_attributes_list<ApplianceOutput<sym_type>> {
 
     static constexpr std::array<MetaAttribute, 7> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&ApplianceOutput<sym>::id>(offsetof(ApplianceOutput<sym>, id), "id"),
             meta_data_gen::get_meta_attribute<&ApplianceOutput<sym>::energized>(offsetof(ApplianceOutput<sym>, energized), "energized"),
             meta_data_gen::get_meta_attribute<&ApplianceOutput<sym>::p>(offsetof(ApplianceOutput<sym>, p), "p"),
@@ -121,7 +121,7 @@ struct get_attributes_list<VoltageSensorOutput<sym_type>> {
 
     static constexpr std::array<MetaAttribute, 4> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&VoltageSensorOutput<sym>::id>(offsetof(VoltageSensorOutput<sym>, id), "id"),
             meta_data_gen::get_meta_attribute<&VoltageSensorOutput<sym>::energized>(offsetof(VoltageSensorOutput<sym>, energized), "energized"),
             meta_data_gen::get_meta_attribute<&VoltageSensorOutput<sym>::u_residual>(offsetof(VoltageSensorOutput<sym>, u_residual), "u_residual"),
@@ -135,7 +135,7 @@ struct get_attributes_list<PowerSensorOutput<sym_type>> {
 
     static constexpr std::array<MetaAttribute, 4> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&PowerSensorOutput<sym>::id>(offsetof(PowerSensorOutput<sym>, id), "id"),
             meta_data_gen::get_meta_attribute<&PowerSensorOutput<sym>::energized>(offsetof(PowerSensorOutput<sym>, energized), "energized"),
             meta_data_gen::get_meta_attribute<&PowerSensorOutput<sym>::p_residual>(offsetof(PowerSensorOutput<sym>, p_residual), "p_residual"),
@@ -147,7 +147,7 @@ template<>
 struct get_attributes_list<FaultOutput> {
     static constexpr std::array<MetaAttribute, 2> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&FaultOutput::id>(offsetof(FaultOutput, id), "id"),
             meta_data_gen::get_meta_attribute<&FaultOutput::energized>(offsetof(FaultOutput, energized), "energized"),
     };
@@ -157,7 +157,7 @@ template<>
 struct get_attributes_list<FaultShortCircuitOutput> {
     static constexpr std::array<MetaAttribute, 4> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&FaultShortCircuitOutput::id>(offsetof(FaultShortCircuitOutput, id), "id"),
             meta_data_gen::get_meta_attribute<&FaultShortCircuitOutput::energized>(offsetof(FaultShortCircuitOutput, energized), "energized"),
             meta_data_gen::get_meta_attribute<&FaultShortCircuitOutput::i_f>(offsetof(FaultShortCircuitOutput, i_f), "i_f"),
@@ -169,7 +169,7 @@ template<>
 struct get_attributes_list<NodeShortCircuitOutput> {
     static constexpr std::array<MetaAttribute, 5> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&NodeShortCircuitOutput::id>(offsetof(NodeShortCircuitOutput, id), "id"),
             meta_data_gen::get_meta_attribute<&NodeShortCircuitOutput::energized>(offsetof(NodeShortCircuitOutput, energized), "energized"),
             meta_data_gen::get_meta_attribute<&NodeShortCircuitOutput::u_pu>(offsetof(NodeShortCircuitOutput, u_pu), "u_pu"),
@@ -182,7 +182,7 @@ template<>
 struct get_attributes_list<BranchShortCircuitOutput> {
     static constexpr std::array<MetaAttribute, 6> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&BranchShortCircuitOutput::id>(offsetof(BranchShortCircuitOutput, id), "id"),
             meta_data_gen::get_meta_attribute<&BranchShortCircuitOutput::energized>(offsetof(BranchShortCircuitOutput, energized), "energized"),
             meta_data_gen::get_meta_attribute<&BranchShortCircuitOutput::i_from>(offsetof(BranchShortCircuitOutput, i_from), "i_from"),
@@ -196,7 +196,7 @@ template<>
 struct get_attributes_list<Branch3ShortCircuitOutput> {
     static constexpr std::array<MetaAttribute, 8> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&Branch3ShortCircuitOutput::id>(offsetof(Branch3ShortCircuitOutput, id), "id"),
             meta_data_gen::get_meta_attribute<&Branch3ShortCircuitOutput::energized>(offsetof(Branch3ShortCircuitOutput, energized), "energized"),
             meta_data_gen::get_meta_attribute<&Branch3ShortCircuitOutput::i_1>(offsetof(Branch3ShortCircuitOutput, i_1), "i_1"),
@@ -212,7 +212,7 @@ template<>
 struct get_attributes_list<ApplianceShortCircuitOutput> {
     static constexpr std::array<MetaAttribute, 4> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&ApplianceShortCircuitOutput::id>(offsetof(ApplianceShortCircuitOutput, id), "id"),
             meta_data_gen::get_meta_attribute<&ApplianceShortCircuitOutput::energized>(offsetof(ApplianceShortCircuitOutput, energized), "energized"),
             meta_data_gen::get_meta_attribute<&ApplianceShortCircuitOutput::i>(offsetof(ApplianceShortCircuitOutput, i), "i"),
@@ -224,7 +224,7 @@ template<>
 struct get_attributes_list<SensorShortCircuitOutput> {
     static constexpr std::array<MetaAttribute, 2> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&SensorShortCircuitOutput::id>(offsetof(SensorShortCircuitOutput, id), "id"),
             meta_data_gen::get_meta_attribute<&SensorShortCircuitOutput::energized>(offsetof(SensorShortCircuitOutput, energized), "energized"),
     };
@@ -234,7 +234,7 @@ template<>
 struct get_attributes_list<TransformerTapRegulatorOutput> {
     static constexpr std::array<MetaAttribute, 3> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&TransformerTapRegulatorOutput::id>(offsetof(TransformerTapRegulatorOutput, id), "id"),
             meta_data_gen::get_meta_attribute<&TransformerTapRegulatorOutput::energized>(offsetof(TransformerTapRegulatorOutput, energized), "energized"),
             meta_data_gen::get_meta_attribute<&TransformerTapRegulatorOutput::tap_pos>(offsetof(TransformerTapRegulatorOutput, tap_pos), "tap_pos"),
@@ -245,7 +245,7 @@ template<>
 struct get_attributes_list<VoltageRegulatorOutput> {
     static constexpr std::array<MetaAttribute, 3> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&VoltageRegulatorOutput::id>(offsetof(VoltageRegulatorOutput, id), "id"),
             meta_data_gen::get_meta_attribute<&VoltageRegulatorOutput::energized>(offsetof(VoltageRegulatorOutput, energized), "energized"),
             meta_data_gen::get_meta_attribute<&VoltageRegulatorOutput::limit_violated>(offsetof(VoltageRegulatorOutput, limit_violated), "limit_violated"),
@@ -256,7 +256,7 @@ template<>
 struct get_attributes_list<RegulatorShortCircuitOutput> {
     static constexpr std::array<MetaAttribute, 2> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&RegulatorShortCircuitOutput::id>(offsetof(RegulatorShortCircuitOutput, id), "id"),
             meta_data_gen::get_meta_attribute<&RegulatorShortCircuitOutput::energized>(offsetof(RegulatorShortCircuitOutput, energized), "energized"),
     };
@@ -268,11 +268,83 @@ struct get_attributes_list<CurrentSensorOutput<sym_type>> {
 
     static constexpr std::array<MetaAttribute, 4> value{
             // all attributes including base class
-            
+
             meta_data_gen::get_meta_attribute<&CurrentSensorOutput<sym>::id>(offsetof(CurrentSensorOutput<sym>, id), "id"),
             meta_data_gen::get_meta_attribute<&CurrentSensorOutput<sym>::energized>(offsetof(CurrentSensorOutput<sym>, energized), "energized"),
             meta_data_gen::get_meta_attribute<&CurrentSensorOutput<sym>::i_residual>(offsetof(CurrentSensorOutput<sym>, i_residual), "i_residual"),
             meta_data_gen::get_meta_attribute<&CurrentSensorOutput<sym>::i_angle_residual>(offsetof(CurrentSensorOutput<sym>, i_angle_residual), "i_angle_residual"),
+    };
+};
+
+template<>
+struct get_attributes_list<VoltageUncertaintyObserverOutput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+
+            meta_data_gen::get_meta_attribute<&VoltageUncertaintyObserverOutput::id>(offsetof(VoltageUncertaintyObserverOutput, id), "id"),
+            meta_data_gen::get_meta_attribute<&VoltageUncertaintyObserverOutput::energized>(offsetof(VoltageUncertaintyObserverOutput, energized), "energized"),
+            meta_data_gen::get_meta_attribute<&VoltageUncertaintyObserverOutput::u_sigma>(offsetof(VoltageUncertaintyObserverOutput, u_sigma), "u_sigma"),
+            meta_data_gen::get_meta_attribute<&VoltageUncertaintyObserverOutput::u_angle_sigma>(offsetof(VoltageUncertaintyObserverOutput, u_angle_sigma), "u_angle_sigma"),
+    };
+};
+
+template<>
+struct get_attributes_list<PowerUncertaintyObserverOutput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverOutput::id>(offsetof(PowerUncertaintyObserverOutput, id), "id"),
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverOutput::energized>(offsetof(PowerUncertaintyObserverOutput, energized), "energized"),
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverOutput::p_sigma>(offsetof(PowerUncertaintyObserverOutput, p_sigma), "p_sigma"),
+            meta_data_gen::get_meta_attribute<&PowerUncertaintyObserverOutput::q_sigma>(offsetof(PowerUncertaintyObserverOutput, q_sigma), "q_sigma"),
+    };
+};
+
+template<>
+struct get_attributes_list<CurrentUncertaintyObserverOutput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverOutput::id>(offsetof(CurrentUncertaintyObserverOutput, id), "id"),
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverOutput::energized>(offsetof(CurrentUncertaintyObserverOutput, energized), "energized"),
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverOutput::i_sigma>(offsetof(CurrentUncertaintyObserverOutput, i_sigma), "i_sigma"),
+            meta_data_gen::get_meta_attribute<&CurrentUncertaintyObserverOutput::i_angle_sigma>(offsetof(CurrentUncertaintyObserverOutput, i_angle_sigma), "i_angle_sigma"),
+    };
+};
+
+template<>
+struct get_attributes_list<AsymVoltageUncertaintyObserverOutput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+
+            meta_data_gen::get_meta_attribute<&AsymVoltageUncertaintyObserverOutput::id>(offsetof(AsymVoltageUncertaintyObserverOutput, id), "id"),
+            meta_data_gen::get_meta_attribute<&AsymVoltageUncertaintyObserverOutput::energized>(offsetof(AsymVoltageUncertaintyObserverOutput, energized), "energized"),
+            meta_data_gen::get_meta_attribute<&AsymVoltageUncertaintyObserverOutput::u_sigma>(offsetof(AsymVoltageUncertaintyObserverOutput, u_sigma), "u_sigma"),
+            meta_data_gen::get_meta_attribute<&AsymVoltageUncertaintyObserverOutput::u_angle_sigma>(offsetof(AsymVoltageUncertaintyObserverOutput, u_angle_sigma), "u_angle_sigma"),
+    };
+};
+
+template<>
+struct get_attributes_list<AsymPowerUncertaintyObserverOutput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+
+            meta_data_gen::get_meta_attribute<&AsymPowerUncertaintyObserverOutput::id>(offsetof(AsymPowerUncertaintyObserverOutput, id), "id"),
+            meta_data_gen::get_meta_attribute<&AsymPowerUncertaintyObserverOutput::energized>(offsetof(AsymPowerUncertaintyObserverOutput, energized), "energized"),
+            meta_data_gen::get_meta_attribute<&AsymPowerUncertaintyObserverOutput::p_sigma>(offsetof(AsymPowerUncertaintyObserverOutput, p_sigma), "p_sigma"),
+            meta_data_gen::get_meta_attribute<&AsymPowerUncertaintyObserverOutput::q_sigma>(offsetof(AsymPowerUncertaintyObserverOutput, q_sigma), "q_sigma"),
+    };
+};
+
+template<>
+struct get_attributes_list<AsymCurrentUncertaintyObserverOutput> {
+    static constexpr std::array<MetaAttribute, 4> value{
+            // all attributes including base class
+
+            meta_data_gen::get_meta_attribute<&AsymCurrentUncertaintyObserverOutput::id>(offsetof(AsymCurrentUncertaintyObserverOutput, id), "id"),
+            meta_data_gen::get_meta_attribute<&AsymCurrentUncertaintyObserverOutput::energized>(offsetof(AsymCurrentUncertaintyObserverOutput, energized), "energized"),
+            meta_data_gen::get_meta_attribute<&AsymCurrentUncertaintyObserverOutput::i_sigma>(offsetof(AsymCurrentUncertaintyObserverOutput, i_sigma), "i_sigma"),
+            meta_data_gen::get_meta_attribute<&AsymCurrentUncertaintyObserverOutput::i_angle_sigma>(offsetof(AsymCurrentUncertaintyObserverOutput, i_angle_sigma), "i_angle_sigma"),
     };
 };
 
