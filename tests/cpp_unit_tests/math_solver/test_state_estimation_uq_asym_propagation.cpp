@@ -1,8 +1,7 @@
 // SPDX-FileCopyrightText: Contributors to the Power Grid Model project <powergridmodel@lfenergy.org>
 // SPDX-License-Identifier: MPL-2.0
 
-#include <power_grid_model/math_solver/state_estimation_uq_branch.hpp>
-#include <power_grid_model/math_solver/state_estimation_uq_completion.hpp>
+#include <power_grid_model/math_solver/state_estimation_uq_injection.hpp>
 
 #include <Eigen/LU>
 #include <doctest/doctest.h>
@@ -140,6 +139,15 @@ MathModelParam<asymmetric_t> coupled_parameters() {
     return parameters;
 }
 
+struct CoupledMeasurements {
+    bool constrained = false;
+    PowerSensorCalcParam<asymmetric_t> injection{
+        {RealValue<asymmetric_t>{0., 0., 1.}, RealValue<asymmetric_t>{0., .2, 0.}},
+        {RealValue<asymmetric_t>{0., 0., 0.}, RealValue<asymmetric_t>{0., .3, 0.}}};
+    bool has_bus_injection(Idx) const { return constrained; }
+    auto const& bus_injection(Idx) const { return injection; }
+};
+
 template <class Function> auto finite_difference(ComplexValueVector<asymmetric_t> const& u, Function&& evaluate) {
     Eigen::Matrix<double, 1, 18> row;
     constexpr double step = 1e-6;
@@ -195,9 +203,54 @@ template <bool complex> void check_coupled_propagation(bool relative) {
             }
         }
     }
+    StateEstimationUQRequest request;
+    request.injection = {{1, true, true}};
+    request.pair_diagnostics = true;
+    StateEstimationUQResult<asymmetric_t> result;
+    CoupledMeasurements measured;
+    PhysicalBlocks result_stored{covariance};
+    injection_results(covariance, y_bus, measured, request, result, result_stored);
+    REQUIRE(result.pairs.size() == 3);
+    auto const pair = std::ranges::find_if(
+        result.pairs, [](auto const& item) { return item.first_bus == 0 && item.second_bus == 2; });
+    REQUIRE(pair != result.pairs.end());
+    CHECK(pair->route == UQPairRoute::separator);
+    CHECK(pair->middle_bus == 1);
+    for (int phase = 0; phase != 3; ++phase)
+        for (bool reactive : {false, true}) {
+            auto evaluate = [&](auto const& u) {
+                DoubleComplex current{};
+                for (Idx p = y_bus.row_indptr()[1]; p != y_bus.row_indptr()[2]; ++p)
+                    for (int q = 0; q != 3; ++q)
+                        current += y_bus.admittance()[p](phase, q) * u[y_bus.col_indices()[p]](q);
+                auto const power = u[1](phase) * std::conj(current);
+                return reactive ? power.imag() : power.real();
+            };
+            auto const row = finite_difference(covariance.u, evaluate);
+            double const expected = (row * dense * row.transpose())(0, 0);
+            auto const& value = reactive ? result.injection[0].reactive_power.phase[phase]
+                                         : result.injection[0].active_power.phase[phase];
+            CHECK(value.raw_status == UQVarianceStatus::valid);
+            CHECK(value.raw_variance == doctest::Approx(expected).epsilon(2e-8));
+        }
+    measured.constrained = true;
+    auto const before = result.injection[0];
+    StateEstimationUQResult<asymmetric_t> constrained;
+    PhysicalBlocks constrained_stored{covariance};
+    injection_results(covariance, y_bus, measured, request, constrained, constrained_stored);
+    for (int phase = 0; phase != 3; ++phase) {
+        auto const& value = constrained.injection[0].active_power.phase[phase];
+        CHECK(value.exact_zero_enforced == (phase == 0));
+        CHECK(value.raw_variance == before.active_power.phase[phase].raw_variance);
+        CHECK(value.raw_status == before.active_power.phase[phase].raw_status);
+        if (phase == 0)
+            CHECK(value.sigma == 0.);
+        else
+            CHECK(value.sigma > 0.);
+    }
 }
 
-TEST_CASE("Asymmetric UQ coupled endpoint contractions match independent real Jacobians") {
+TEST_CASE("Asymmetric UQ coupled endpoint and neighborhood contractions match independent real Jacobians") {
     check_coupled_propagation<true>(false);
     check_coupled_propagation<true>(true);
     check_coupled_propagation<false>(false);
@@ -353,7 +406,7 @@ TEST_CASE("Asymmetric completion conditioning includes every multiplier phase at
     check_full_middle_threshold<false>();
 }
 
-TEST_CASE("Asymmetric zero-current singularity remains phase local") {
+TEST_CASE("Asymmetric zero-current singularity and exact-zero enforcement remain phase local") {
     CoupledCovariance<true> covariance;
     covariance.u[1] = covariance.u[0];
     auto const topology = coupled_topology();
@@ -377,6 +430,22 @@ TEST_CASE("Asymmetric zero-current singularity remains phase local") {
     for (int p : {1, 2}) {
         CHECK(branch.current_magnitude.phase[p].raw_status == UQVarianceStatus::valid);
         CHECK(branch.current_angle.phase[p].raw_status == UQVarianceStatus::valid);
+    }
+    CoupledMeasurements measured;
+    measured.constrained = true;
+    request.injection = {{1, true, true}};
+    auto& invalid = covariance.raw(1, 1).value;
+    invalid(0, 0) = std::numeric_limits<double>::quiet_NaN();
+    PhysicalBlocks result_stored{covariance};
+    injection_results(covariance, y_bus, measured, request, result, result_stored);
+    for (int p = 0; p != 3; ++p) {
+        auto const& output = result.injection[0].active_power.phase[p];
+        CHECK(output.raw_status == UQVarianceStatus::invalid);
+        CHECK(output.exact_zero_enforced == (p == 0));
+        if (p == 0)
+            CHECK(output.sigma == 0.);
+        else
+            CHECK(std::isnan(output.sigma));
     }
 }
 

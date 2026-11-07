@@ -7,7 +7,7 @@ The optional `StateEstimationUQContext` is an internal, synchronous math-solver
 interface for quantifying the uncertainty of state-estimation results. It leaves
 `SolverOutput` and public calculation signatures unchanged.
 Requests use island-local mathematical indices. Bus/branch bounds and branch
-sides are checked. Voltage and branch rows may be unordered or repeated; result
+sides are checked. Voltage, branch and injection rows may be unordered or repeated; result
 rows follow request order.
 A row selecting no quantities retains the default `not_requested` fields.
 Null and empty requests perform no uncertainty work. Callers supply fresh UQ
@@ -17,8 +17,7 @@ requests and estimator failures leave the supplied result unchanged. A gain
 that fails a numerical check of the uncertainty calculation does not discard
 the estimate: the estimate is returned and every requested uncertainty is
 reported invalid.
-Voltage and branch requests are supported for both symmetries; nodal-injection
-requests remain declared but fail explicitly.
+Voltage, branch and nodal-injection requests are supported for both symmetries.
 
 ## Prepared model and variance normalization
 
@@ -319,3 +318,37 @@ Construction uses O(n+e+s) storage for graphs and original stored blocks; each
 missing pair intersects the two sorted augmented adjacency lists and examines
 physical common neighbors. No dense
 island matrix is created in production.
+
+## Nodal injection uncertainty
+
+Injection results use the actual returned-state Y-bus row, including shunts,
+and the complete closed electrical neighborhood. The terminal voltage term and
+every current term are differentiated in real rectangular voltage coordinates.
+ILSE proper complex covariance is converted with the required one-half factor;
+the power map retains the resulting pseudo-covariance. NRSE uses the corrected
+rectangular physical covariance, so physical fallback blocks are never treated
+as raw augmented or polar blocks.
+
+Each unique neighborhood pair is completed once per call and recorded in
+canonical bus order when pair diagnostics are requested. Voltage and branch
+results are preserved.
+
+Contraction streams individual signed terms and their absolute values through
+ordinary double sums. Negative values within 1000 double eps times the
+actual term scale clip to zero; material negatives or invalid source blocks
+remain invalid. Zero voltage/current does not invalidate signed P/Q derivatives.
+After preserving raw status, variance and scale, requested P/Q sigmas are forced
+to zero only when processed P, Q and both processed measurement variances are
+exactly zero. Noisy zeros and absent measurements do not qualify. Exact-zero
+reporting preserves any raw invalidity and does not repair matrix failure.
+
+The native test `test_state_estimation_uq_integration.cpp` checks the direct
+core against sparse Full and separator references, an independent constrained
+NRSE reference for every output group, and seeded noisy realizations of both
+solvers.
+
+Standalone helper tests use independently differentiated dense output maps,
+complete dense augmented references, physical fallback references, cancellation,
+extreme scales and exact/noisy-zero counterexamples. The separate integrated
+gates exercise full solvers and quantify approximation discrepancies
+independently from exact algebra.

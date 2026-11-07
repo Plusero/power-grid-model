@@ -404,6 +404,45 @@ template <class Gain, class Unknown, int N> struct WorkspaceCase {
 };
 } // namespace
 
+namespace {
+struct NoInjection {
+    bool has_bus_injection(Idx /*bus*/) const { return false; }
+    PowerSensorCalcParam<symmetric_t> bus_injection(Idx /*bus*/) const { return {}; }
+};
+
+template <class Gain, class Unknown, int N> void check_diagnostic_invariance(bool mesh, bool relative) {
+    // NRSE has a virtual angle bus exactly when it reports relative angles.
+    WorkspaceCase<Gain, Unknown, N> fixture{mesh, relative, N == 2 && relative ? 0 : -1, 1.0};
+    StateEstimationUQRequest request;
+    request.injection = {{0, true, true}, {1, true, true}, {2, true, true}, {3, true, true}};
+    StateEstimationUQResult<symmetric_t> plain, diagnosed;
+    PhysicalBlocks plain_stored{fixture.covariance};
+    injection_results(fixture.covariance, fixture.y_bus, NoInjection{}, request, plain, plain_stored);
+    request.pair_diagnostics = true;
+    PhysicalBlocks diagnosed_stored{fixture.covariance};
+    injection_results(fixture.covariance, fixture.y_bus, NoInjection{}, request, diagnosed, diagnosed_stored);
+    for (Idx bus = 0; bus != 4; ++bus) {
+        for (auto const member :
+             {&InjectionUQResult<symmetric_t>::active_power, &InjectionUQResult<symmetric_t>::reactive_power}) {
+            auto const& first = (plain.injection[bus].*member).phase[0];
+            auto const& second = (diagnosed.injection[bus].*member).phase[0];
+            CHECK(first.raw_status == second.raw_status);
+            CHECK(first.raw_variance == second.raw_variance);
+            CHECK(first.absolute_scale == second.absolute_scale);
+        }
+    }
+}
+} // namespace
+
+TEST_CASE("UQ injection diagnostics preserve contraction values") {
+    for (bool const mesh : {false, true}) {
+        for (bool const relative : {false, true}) {
+            check_diagnostic_invariance<ILGain, ILUnknown, 1>(mesh, relative);
+            check_diagnostic_invariance<NRGain, NRUnknown, 2>(mesh, relative);
+        }
+    }
+}
+
 TEST_CASE("UQ physical map preserves an exactly cancelled corrected state") {
     using Fixture = WorkspaceCase<NRGain, NRUnknown, 2>;
     Fixture fixture{false, false, -1, 1.0, {1.1, 1.2, 1.0, 1.0}};
@@ -660,7 +699,91 @@ TEST_CASE_TEMPLATE("UQ voltage integration and estimate invariance", Solver, Ite
     }
 }
 
-TEST_CASE_TEMPLATE("UQ request bounds and unsupported injection requests", Sym, symmetric_t, asymmetric_t) {
+TEST_CASE_TEMPLATE("UQ injection completion integrates both solvers without changing earlier outputs", Solver,
+                   IterativeLinearSESolver<symmetric_t>, NewtonRaphsonSESolver<symmetric_t>) {
+    for (bool const absolute : {false, true}) {
+        // Source and voltage sensor at bus 0; buses 1-3 are zero-injection buses.
+        auto topo = topology(4, {{0, 1}, {1, 2}, {1, 3}});
+        topo.sources_per_bus = {from_sparse, {0, 1, 1, 1, 1}};
+        YBus<symmetric_t> const y_bus{topo, parameters(3)};
+        StateEstimationInput<symmetric_t> input;
+        input.source_status = {1};
+        input.measured_voltage = {
+            {.value = absolute ? DoubleComplex{1.0, 0.0} : DoubleComplex{1.0, nan}, .variance = 1e-4}};
+        Solver solver{y_bus, topo};
+        common::logging::NoLogger log;
+        StateEstimationUQRequest request;
+        request.voltage = {{0, true, true}, {3, true, true}};
+        request.branch = {{0, BranchSide::from, true, true, false, false}};
+        StateEstimationUQResult<symmetric_t> earlier;
+        StateEstimationUQContext<symmetric_t> context{request, earlier};
+        auto const baseline = solver.run_state_estimation(y_bus, input, 1e-12, 30, log, &context);
+        request.injection = {{0, true, true}, {1, true, true}, {2, true, true}, {3, false, true}};
+        StateEstimationUQResult<symmetric_t> undiagnosed;
+        StateEstimationUQContext<symmetric_t> undiagnosed_context{request, undiagnosed};
+        solver.run_state_estimation(y_bus, input, 1e-12, 30, log, &undiagnosed_context);
+        CHECK(undiagnosed.pairs.empty());
+        request.pair_diagnostics = true;
+        StateEstimationUQResult<symmetric_t> result;
+        StateEstimationUQContext<symmetric_t> all_context{request, result};
+        auto const enabled = solver.run_state_estimation(y_bus, input, 1e-12, 30, log, &all_context);
+        CHECK(enabled.u == baseline.u);
+        REQUIRE(result.injection.size() == 4);
+        CHECK(result.voltage[0].magnitude.phase[0].raw_variance == earlier.voltage[0].magnitude.phase[0].raw_variance);
+        CHECK(result.voltage[1].angle.phase[0].raw_variance == earlier.voltage[1].angle.phase[0].raw_variance);
+        CHECK(result.branch[0].active_power.phase[0].raw_variance ==
+              earlier.branch[0].active_power.phase[0].raw_variance);
+        CHECK(result.branch[0].reactive_power.phase[0].raw_variance ==
+              earlier.branch[0].reactive_power.phase[0].raw_variance);
+        for (Idx bus : {1, 2, 3}) {
+            auto const& reactive = result.injection[bus].reactive_power.phase[0];
+            CHECK(reactive.exact_zero_enforced);
+            CHECK(reactive.sigma == 0);
+            CHECK(reactive.raw_status != UQVarianceStatus::not_requested);
+        }
+        CHECK(result.injection[3].active_power.phase[0].raw_status == UQVarianceStatus::not_requested);
+        CHECK_FALSE(result.injection[3].active_power.phase[0].exact_zero_enforced);
+        REQUIRE(result.pairs.size() == 6);
+        for (std::size_t i = 1; i < result.pairs.size(); ++i)
+            CHECK(std::pair{result.pairs[i - 1].first_bus, result.pairs[i - 1].second_bus} <
+                  std::pair{result.pairs[i].first_bus, result.pairs[i].second_bus});
+        for (std::size_t i = 0; i != result.injection.size(); ++i) {
+            CHECK(result.injection[i].reactive_power.phase[0].raw_variance ==
+                  undiagnosed.injection[i].reactive_power.phase[0].raw_variance);
+        }
+        auto reordered_request = request;
+        reordered_request.branch = {
+            {0, BranchSide::to, false, false, false, false}, request.branch[0], request.branch[0]};
+        reordered_request.injection = {
+            request.injection[3], request.injection[0], request.injection[0], {0, false, false}};
+        StateEstimationUQResult<symmetric_t> reordered_result;
+        StateEstimationUQContext<symmetric_t> reordered_context{reordered_request, reordered_result};
+        auto const reordered = solver.run_state_estimation(y_bus, input, 1e-12, 30, log, &reordered_context);
+        CHECK(reordered.u == baseline.u);
+        REQUIRE(reordered_result.branch.size() == 3);
+        REQUIRE(reordered_result.injection.size() == 4);
+        CHECK(reordered_result.branch[0].active_power.phase[0].raw_status == UQVarianceStatus::not_requested);
+        CHECK(reordered_result.branch[0].current_angle.phase[0].raw_status == UQVarianceStatus::not_requested);
+        CHECK(reordered_result.injection[0].reactive_power.phase[0].raw_variance ==
+              result.injection[3].reactive_power.phase[0].raw_variance);
+        for (std::size_t row = 1; row != 3; ++row) {
+            CHECK(reordered_result.branch[row].active_power.phase[0].raw_variance ==
+                  result.branch[0].active_power.phase[0].raw_variance);
+            CHECK(reordered_result.injection[row].active_power.phase[0].raw_variance ==
+                  result.injection[0].active_power.phase[0].raw_variance);
+        }
+        CHECK(reordered_result.injection[3].active_power.phase[0].raw_status == UQVarianceStatus::not_requested);
+        CHECK(reordered_result.injection[3].reactive_power.phase[0].raw_status == UQVarianceStatus::not_requested);
+
+        auto invalid_request = request;
+        invalid_request.injection.back().bus = 4;
+        StateEstimationUQResult<symmetric_t> invalid_result;
+        StateEstimationUQContext<symmetric_t> invalid_context{invalid_request, invalid_result};
+        CHECK_THROWS_AS(solver.run_state_estimation(y_bus, input, 1e-12, 30, log, &invalid_context), InvalidArguments);
+    }
+}
+
+TEST_CASE_TEMPLATE("UQ request bounds", Sym, symmetric_t, asymmetric_t) {
     StateEstimationUQRequest request;
     StateEstimationUQResult<Sym> result;
     StateEstimationUQContext<Sym> context{request, result};
@@ -677,9 +800,10 @@ TEST_CASE_TEMPLATE("UQ request bounds and unsupported injection requests", Sym, 
     request.branch = {{0, static_cast<BranchSide>(2), true, false, false, false}};
     CHECK_THROWS_AS(validate_context(&context, 2, 1), InvalidArguments);
     request = {};
-    request.injection = {{0, true, false}};
-    CHECK_THROWS_WITH_AS(validate_context(&context, 2, 1), "Injection uncertainty is not implemented",
-                         InvalidArguments);
+    for (Idx const bus : {-1, 2}) {
+        request.injection = {{bus, true, false}};
+        CHECK_THROWS_AS(validate_context(&context, 2, 1), InvalidArguments);
+    }
     request = {};
     CHECK_NOTHROW(validate_context(&context, 2, 1));
 }
@@ -700,12 +824,14 @@ TEST_CASE_TEMPLATE("UQ numerical failure keeps the estimate and reports requeste
     StateEstimationUQRequest request;
     request.voltage = {{0, true, true}, {1, false, false}};
     request.branch = {{0, BranchSide::to, true, false, true, false}};
+    request.injection = {{1, false, true}};
     StateEstimationUQResult<symmetric_t> result;
     StateEstimationUQContext<symmetric_t> context{request, result};
     auto const enabled = solver.run_state_estimation(y_bus, input, 1e-12, 30, log, &context);
     CHECK(enabled.u == ordinary.u);
     REQUIRE(result.voltage.size() == 2);
     REQUIRE(result.branch.size() == 1);
+    REQUIRE(result.injection.size() == 1);
     for (auto const* value : {&result.voltage[0].magnitude.phase[0], &result.voltage[0].angle.phase[0]}) {
         CHECK(value->raw_status == UQVarianceStatus::invalid);
         CHECK(std::isnan(value->sigma));
@@ -722,6 +848,59 @@ TEST_CASE_TEMPLATE("UQ numerical failure keeps the estimate and reports requeste
     }
     CHECK(branch.reactive_power.phase[0].raw_status == UQVarianceStatus::not_requested);
     CHECK(branch.current_angle.phase[0].raw_status == UQVarianceStatus::not_requested);
+    auto const& injection = result.injection[0].reactive_power.phase[0];
+    CHECK(injection.raw_status == UQVarianceStatus::invalid);
+    CHECK(std::isnan(injection.sigma));
+    CHECK(std::isnan(injection.raw_variance));
+    CHECK(result.injection[0].active_power.phase[0].raw_status == UQVarianceStatus::not_requested);
+    CHECK(result.pairs.empty());
+    CHECK_FALSE(injection.exact_zero_enforced);
+}
+
+TEST_CASE_TEMPLATE("UQ total underflow of exactly nonzero terms is invalid, structural zeros stay valid", Solver,
+                   IterativeLinearSESolver<symmetric_t>, NewtonRaphsonSESolver<symmetric_t>) {
+    // One bus with a source, a voltage sensor and a shunt: the active-power
+    // rows carry the shunt conductance g, so the variance is about 4 g^2 var(U).
+    auto topo = topology(1, {});
+    topo.shunts_per_bus = {from_sparse, {0, 1}};
+    topo.power_sensors_per_shunt = {from_sparse, {0, 0}};
+    for (double const g : {1e-120, 1e-288, 0.0}) {
+        MathModelParam<symmetric_t> param;
+        param.shunt_param = {DoubleComplex{g, 0.1}};
+        YBus<symmetric_t> const y_bus{topo, std::move(param)};
+        StateEstimationInput<symmetric_t> input;
+        input.shunt_status = {1};
+        input.source_status = {1};
+        input.measured_voltage = {{.value = DoubleComplex{1.0, 0.0}, .variance = 1e-4}};
+        Solver solver{y_bus, topo};
+        common::logging::NoLogger log;
+        StateEstimationUQRequest request;
+        request.injection = {{0, true, true}};
+        StateEstimationUQResult<symmetric_t> result;
+        StateEstimationUQContext<symmetric_t> context{request, result};
+        solver.run_state_estimation(y_bus, input, 1e-12, 30, log, &context);
+        REQUIRE(result.injection.size() == 1);
+        auto const& active = result.injection[0].active_power.phase[0];
+        auto const& reactive = result.injection[0].reactive_power.phase[0];
+        CHECK(reactive.raw_status == UQVarianceStatus::valid);
+        CHECK(reactive.sigma > 0.0);
+        if (g == 1e-120) {
+            // A small but normal variance stays valid.
+            CHECK(active.raw_status == UQVarianceStatus::valid);
+            // sigma_P = 2 g sigma_|U|; the ILSE magnitude variance is half the complex variance.
+            double const sigma_u = Solver::is_NRSE_solver ? 1e-2 : std::sqrt(0.5e-4);
+            CHECK(active.sigma == doctest::Approx(2 * g * sigma_u).epsilon(1e-6));
+        } else if (g == 0.0) {
+            // An exactly zero conductance gives exactly zero rows: a valid zero.
+            CHECK(active.raw_status == UQVarianceStatus::valid);
+            CHECK(active.sigma == 0.0);
+        } else {
+            // Every term underflows: not a false zero.
+            CHECK(active.raw_status == UQVarianceStatus::invalid);
+            CHECK(active.absolute_scale < std::numeric_limits<double>::min());
+            CHECK(std::isnan(active.sigma));
+        }
+    }
 }
 
 } // namespace power_grid_model::math_solver

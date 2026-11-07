@@ -41,6 +41,8 @@ struct StateEstimationUQRequest {
     std::vector<VoltageUQRequest> voltage;
     std::vector<BranchUQRequest> branch;
     std::vector<InjectionUQRequest> injection;
+    // Opt-in per-pair completion diagnostics.
+    bool pair_diagnostics = false;
     bool empty() const { return voltage.empty() && branch.empty() && injection.empty(); }
 };
 
@@ -55,6 +57,7 @@ struct UQPhaseValue {
     double absolute_scale = std::numeric_limits<double>::quiet_NaN();
     double sigma = std::numeric_limits<double>::quiet_NaN();
     UQVarianceStatus raw_status = UQVarianceStatus::not_requested;
+    bool exact_zero_enforced = false;
 };
 template <symmetry_tag sym> struct UQValue {
     std::array<UQPhaseValue, is_symmetric_v<sym> ? 1 : 3> phase{};
@@ -65,6 +68,9 @@ template <symmetry_tag sym> struct VoltageUQResult {
 
 template <symmetry_tag sym> struct BranchUQResult {
     UQValue<sym> active_power, reactive_power, current_magnitude, current_angle;
+};
+template <symmetry_tag sym> struct InjectionUQResult {
+    UQValue<sym> active_power, reactive_power;
 };
 
 enum class UQPairRoute : IntS { stored, separator, augmented_path, mean_path, zero_target, invalid };
@@ -80,6 +86,8 @@ struct UQPairDiagnostic {
 template <symmetry_tag sym> struct StateEstimationUQResult {
     std::vector<VoltageUQResult<sym>> voltage;
     std::vector<BranchUQResult<sym>> branch;
+    std::vector<InjectionUQResult<sym>> injection;
+    std::vector<UQPairDiagnostic> pairs;
 };
 // Non-owning request/result context passed to run_state_estimation for one island.
 template <symmetry_tag sym> struct StateEstimationUQContext {
@@ -94,9 +102,6 @@ template <symmetry_tag sym> void validate_context(StateEstimationUQContext<sym>*
         return;
     }
     auto const& request = uq->request;
-    if (!request.injection.empty()) {
-        throw InvalidArguments{"Injection uncertainty is not implemented"};
-    }
     for (auto const& item : request.voltage) {
         if (item.bus < 0 || item.bus >= n_bus) {
             throw InvalidArguments{"Invalid voltage uncertainty request"};
@@ -106,6 +111,11 @@ template <symmetry_tag sym> void validate_context(StateEstimationUQContext<sym>*
         if (item.branch < 0 || item.branch >= n_branch ||
             (item.side != BranchSide::from && item.side != BranchSide::to)) {
             throw InvalidArguments{"Invalid branch uncertainty request"};
+        }
+    }
+    for (auto const& item : request.injection) {
+        if (item.bus < 0 || item.bus >= n_bus) {
+            throw InvalidArguments{"Invalid injection uncertainty request"};
         }
     }
 }
