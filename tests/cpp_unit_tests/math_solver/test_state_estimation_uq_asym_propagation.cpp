@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #include <power_grid_model/math_solver/state_estimation_uq_branch.hpp>
+#include <power_grid_model/math_solver/state_estimation_uq_completion.hpp>
 
 #include <Eigen/LU>
 #include <doctest/doctest.h>
 
 #include <map>
+#include <set>
 
 namespace power_grid_model::math_solver {
 namespace {
@@ -26,7 +28,7 @@ template <bool complex> struct CoupledCovariance {
         RawMatrix value;
         auto const& matrix() const { return value; }
     };
-    std::map<Pair, Raw> augmented_matrix;
+    std::vector<Raw> augmented_matrix; // Indexed by position in col_indices, as in the workspace.
     std::map<Pair, PhysicalBlock> override_physical;
     IdxVector row_indptr{0}, col_indices;
     ComplexValueVector<asymmetric_t> u;
@@ -66,16 +68,12 @@ template <bool complex> struct CoupledCovariance {
         for (Idx i = 0; i != buses; ++i) {
             for (Idx j = 0; j != buses; ++j)
                 if (std::abs(i - j) <= 1) {
-                    augmented_matrix[{i, j}].value = inverse.block(i * raw_size, j * raw_size, raw_size, raw_size);
+                    augmented_matrix.push_back({inverse.block(i * raw_size, j * raw_size, raw_size, raw_size)});
                     col_indices.push_back(j);
                 }
             row_indptr.push_back(static_cast<Idx>(col_indices.size()));
             slack_column.push_back(inverse.template block<states, 1>(i * raw_size, slack_bus * raw_size));
         }
-    }
-    Raw const* augmented_matrix_block(Idx i, Idx j) const {
-        auto const it = augmented_matrix.find({i, j});
-        return it == augmented_matrix.end() ? nullptr : &it->second;
     }
     std::optional<Idx> find_block_index(Idx i, Idx j) const {
         for (Idx p = row_indptr[i]; p != row_indptr[i + 1]; ++p)
@@ -83,19 +81,20 @@ template <bool complex> struct CoupledCovariance {
                 return p;
         return std::nullopt;
     }
+    Raw& raw(Idx i, Idx j) { return augmented_matrix[*find_block_index(i, j)]; }
+    Raw const& raw(Idx i, Idx j) const { return augmented_matrix[*find_block_index(i, j)]; }
     StateBlock correct_raw(Idx, Idx, RawMatrix const& value) const {
         StateMatrix const physical = variance_normalization * value.template topLeftCorner<states, states>();
         return {physical, physical.norm(), true};
     }
-    StateBlock calculate_state_covariance_block(Idx i, Idx j) const {
-        return correct_raw(i, j, augmented_matrix.at({i, j}).value);
-    }
+    StateBlock calculate_state_covariance_block(Idx i, Idx j) const { return correct_raw(i, j, raw(i, j).value); }
     PhysicalBlock physical_from_state(Idx, Idx, StateBlock const& value) const { return value; }
     PhysicalBlock physical_block(Idx i, Idx j) const {
         if (auto const it = override_physical.find({i, j}); it != override_physical.end())
             return it->second;
-        auto const* block = augmented_matrix_block(i, j);
-        return block ? correct_raw(i, j, block->value) : PhysicalBlock{StateMatrix::Zero(), 0., false};
+        auto const index = find_block_index(i, j);
+        return index ? correct_raw(i, j, augmented_matrix[*index].value)
+                     : PhysicalBlock{StateMatrix::Zero(), 0., false};
     }
     Eigen::Matrix<double, 18, 18> rectangular() const {
         Eigen::Matrix<double, 18, 18> result;
@@ -202,6 +201,156 @@ TEST_CASE("Asymmetric UQ coupled endpoint contractions match independent real Ja
     check_coupled_propagation<true>(false);
     check_coupled_propagation<true>(true);
     check_coupled_propagation<false>(false);
+}
+
+template <bool complex> void check_singular_support_completion() {
+    CoupledCovariance<complex> covariance;
+    using Matrix = typename CoupledCovariance<complex>::StateMatrix;
+    using Scalar = typename Matrix::Scalar;
+    constexpr int states = Matrix::RowsAtCompileTime;
+    std::array<Eigen::Matrix<Scalar, states, 1>, 3> vectors;
+    for (int bus = 0; bus != 3; ++bus) {
+        for (int p = 0; p != states; ++p) {
+            if constexpr (complex)
+                vectors[bus](p) = DoubleComplex{.3 + .2 * p, .1 * (p - bus)};
+            else
+                vectors[bus](p) = .3 + .2 * p - .1 * bus;
+        }
+        vectors[bus].normalize();
+    }
+    auto set = [&](Idx i, Idx j, double coefficient) {
+        Matrix const value = coefficient * vectors[i] * vectors[j].adjoint();
+        covariance.override_physical[{i, j}] = {value, value.norm(), true};
+        covariance.override_physical[{j, i}] = {value.adjoint(), value.norm(), true};
+    };
+    for (Idx bus = 0; bus != 3; ++bus)
+        set(bus, bus, 1.);
+    set(0, 1, .25);
+    set(1, 2, -.4);
+    covariance.raw(1, 1).value.setZero(); // Conditioning alone enters mean_path.
+    std::vector<std::vector<Idx>> const graph{{1}, {0, 2}, {1}};
+    PhysicalBlocks completion_stored{covariance};
+    CovarianceCompletion completion{covariance, graph, graph, completion_stored};
+    auto const result = completion.pair(0, 2);
+    REQUIRE(result.block.valid);
+    CHECK(result.diagnostic.route == UQPairRoute::mean_path);
+    CHECK(result.diagnostic.middle_bus == -1);
+    Matrix const expected = -.1 * vectors[0] * vectors[2].adjoint();
+    CHECK((result.block.value - expected).norm() < 2e-15);
+    CHECK(covariance.augmented_matrix.size() == 7); // A completed pair never becomes an original donor.
+
+    // Invalid raw inputs terminate before the fallback, even with valid donors.
+    covariance.raw(1, 1).value(0, 0) = std::numeric_limits<double>::quiet_NaN();
+    PhysicalBlocks invalid_stored{covariance};
+    CovarianceCompletion invalid{covariance, graph, graph, invalid_stored};
+    auto const rejected = invalid.pair(0, 2);
+    CHECK_FALSE(rejected.block.valid);
+    CHECK(rejected.diagnostic.route == UQPairRoute::invalid);
+    CHECK(rejected.diagnostic.middle_bus == -1);
+}
+
+TEST_CASE("Asymmetric completion retains coupled singular phase support and terminal invalid routing") {
+    check_singular_support_completion<true>();
+    check_singular_support_completion<false>();
+}
+
+template <bool complex> void check_mesh_approximation() {
+    using Fixture = CoupledCovariance<complex>;
+    using Matrix = typename Fixture::StateMatrix;
+    using Raw = typename Fixture::RawMatrix;
+    Fixture covariance{4};
+    auto information = covariance.inverse.inverse().eval();
+    // Close the physical/precision cycle 0--1--2--3--0. Pair 0--2 is
+    // nonadjacent, and natural-order elimination fills only pair 1--3.
+    // Thus 0--2 is truly missing from the selected inverse's filled pattern.
+    information.block(0, 3 * Fixture::raw_size, Fixture::raw_size, Fixture::raw_size) = Raw::Identity() * .9;
+    information.block(3 * Fixture::raw_size, 0, Fixture::raw_size, Fixture::raw_size) = Raw::Identity() * .9;
+    covariance.inverse = information.inverse();
+    // Add the pairs 0--3 and 1--3 to the pattern, each with its raw block.
+    std::set<Pair> pattern{{0, 3}, {3, 0}, {1, 3}, {3, 1}};
+    for (Idx i = 0; i != 4; ++i)
+        for (Idx j = 0; j != 4; ++j)
+            if (std::abs(i - j) <= 1)
+                pattern.insert({i, j});
+    covariance.augmented_matrix.clear();
+    covariance.row_indptr = {0};
+    covariance.col_indices.clear();
+    for (Idx i = 0; i != 4; ++i) {
+        for (Idx j = 0; j != 4; ++j)
+            if (pattern.contains({i, j})) {
+                covariance.augmented_matrix.push_back({covariance.inverse.block(
+                    i * Fixture::raw_size, j * Fixture::raw_size, Fixture::raw_size, Fixture::raw_size)});
+                covariance.col_indices.push_back(j);
+                covariance.override_physical[{i, j}] =
+                    covariance.correct_raw(i, j, covariance.augmented_matrix.back().value);
+            }
+        covariance.row_indptr.push_back(static_cast<Idx>(covariance.col_indices.size()));
+    }
+    REQUIRE_FALSE(covariance.find_block_index(0, 2).has_value());
+    REQUIRE(covariance.find_block_index(1, 3).has_value());
+    std::vector<std::vector<Idx>> const graph{{1, 3}, {0, 2}, {1, 3}, {0, 2}};
+    Matrix const exact = covariance.variance_normalization *
+                         covariance.inverse.template block<Fixture::states, Fixture::states>(0, 2 * Fixture::raw_size);
+    PhysicalBlocks augmented_stored{covariance};
+    CovarianceCompletion augmented{covariance, graph, graph, augmented_stored};
+    auto const approximation = augmented.pair(0, 2);
+    REQUIRE(approximation.block.valid);
+    CHECK(approximation.diagnostic.route == UQPairRoute::augmented_path);
+    CHECK(approximation.diagnostic.middle_bus == 1); // First conditioned candidate in ascending order.
+    double const augmented_error = (approximation.block.value - exact).norm();
+    INFO("augmented_path four-cycle sparse-versus-Full error = ", augmented_error);
+    CHECK(augmented_error > 1e-4);
+
+    // Both augmented candidates must fail conditioning before mean_path. The
+    // physical donor pool remains the original full-rank covariance blocks.
+    covariance.raw(1, 1).value.setZero();
+    covariance.raw(3, 3).value.setZero();
+    PhysicalBlocks mean_stored{covariance};
+    CovarianceCompletion mean{covariance, graph, graph, mean_stored};
+    auto const fallback = mean.pair(0, 2);
+    REQUIRE(fallback.block.valid);
+    CHECK(fallback.diagnostic.route == UQPairRoute::mean_path);
+    CHECK(fallback.diagnostic.middle_bus == -1);
+    // Equal-weight mean over both original paths, D_0k D_kk^-1 D_k2 for full-rank middles.
+    auto const& physical = covariance.override_physical;
+    Matrix const expected_mean =
+        (physical.at({0, 1}).value * physical.at({1, 1}).value.inverse() * physical.at({1, 2}).value +
+         physical.at({0, 3}).value * physical.at({3, 3}).value.inverse() * physical.at({3, 2}).value) /
+        2.;
+    CHECK((fallback.block.value - expected_mean).norm() < 1e-12);
+    double const mean_error = (fallback.block.value - exact).norm();
+    INFO("mean_path four-cycle sparse-versus-Full error = ", mean_error);
+    CHECK(mean_error > 1e-4);
+}
+
+TEST_CASE("Asymmetric nonseparator and mean completion validity does not imply exact covariance") {
+    check_mesh_approximation<true>();
+    check_mesh_approximation<false>();
+}
+
+template <bool complex> void check_full_middle_threshold() {
+    using Fixture = CoupledCovariance<complex>;
+    using Raw = typename Fixture::RawMatrix;
+    std::vector<std::vector<Idx>> const graph{{1}, {0, 2}, {1}};
+    for (double ratio : {1e-12 * (1. - 1e-6), 1e-12, 1e-12 * (1. + 1e-6)}) {
+        Fixture covariance;
+        covariance.raw(1, 1).value.setIdentity();
+        // A multiplier phase alone controls the FULL augmented condition test.
+        covariance.raw(1, 1).value(Fixture::raw_size - 1, Fixture::raw_size - 1) = ratio;
+        for (Pair pair : {Pair{0, 1}, Pair{1, 0}, Pair{1, 2}, Pair{2, 1}})
+            covariance.raw(pair.first, pair.second).value = Raw::Identity() * .1;
+        PhysicalBlocks completion_stored{covariance};
+        CovarianceCompletion completion{covariance, graph, graph, completion_stored};
+        auto const result = completion.pair(0, 2);
+        REQUIRE(result.block.valid);
+        CHECK(result.diagnostic.route == (ratio < 1e-12 ? UQPairRoute::mean_path : UQPairRoute::separator));
+        CHECK(result.diagnostic.middle_bus == (ratio < 1e-12 ? -1 : 1));
+    }
+}
+
+TEST_CASE("Asymmetric completion conditioning includes every multiplier phase at the inherited threshold") {
+    check_full_middle_threshold<true>();
+    check_full_middle_threshold<false>();
 }
 
 TEST_CASE("Asymmetric zero-current singularity remains phase local") {

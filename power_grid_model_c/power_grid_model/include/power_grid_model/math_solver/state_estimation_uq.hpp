@@ -67,6 +67,16 @@ template <symmetry_tag sym> struct BranchUQResult {
     UQValue<sym> active_power, reactive_power, current_magnitude, current_angle;
 };
 
+enum class UQPairRoute : IntS { stored, separator, augmented_path, mean_path, zero_target, invalid };
+// Requested per-pair completion diagnostic. approximation_warning marks a kept
+// completed pair whose middle solve residual or normalized correlation exceeds
+// its threshold; it never changes route, value or validity.
+struct UQPairDiagnostic {
+    Idx first_bus = -1, second_bus = -1;
+    UQPairRoute route = UQPairRoute::invalid;
+    Idx middle_bus = -1;
+    bool approximation_warning = false;
+};
 template <symmetry_tag sym> struct StateEstimationUQResult {
     std::vector<VoltageUQResult<sym>> voltage;
     std::vector<BranchUQResult<sym>> branch;

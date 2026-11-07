@@ -4,6 +4,7 @@
 
 #include <power_grid_model/math_solver/iterative_linear_se_solver.hpp>
 #include <power_grid_model/math_solver/newton_raphson_se_solver.hpp>
+#include <power_grid_model/math_solver/state_estimation_uq_completion.hpp>
 
 #include <power_grid_model/common/dummy_logging.hpp>
 #include <power_grid_model/common/statistics.hpp>
@@ -414,6 +415,95 @@ TEST_CASE("UQ physical map preserves an exactly cancelled corrected state") {
     CHECK(block.valid);
     CHECK(block.value.isZero(0));
     CHECK(block.construction_scale == doctest::Approx(6.0 * 1.1 * 1.2));
+}
+
+namespace {
+// The unfactorized augmented graph (Y-bus rows without their own bus) and the
+// branch graph of a four-bus fixture.
+template <class Fixture> std::array<std::vector<std::vector<Idx>>, 2> completion_graphs(Fixture const& fixture) {
+    std::vector<std::vector<Idx>> augmented(4), physical(4);
+    for (Idx bus = 0; bus != 4; ++bus) {
+        for (Idx p = fixture.y_bus.row_indptr()[bus]; p != fixture.y_bus.row_indptr()[bus + 1]; ++p) {
+            if (Idx const other = fixture.y_bus.col_indices()[p]; other != bus) {
+                augmented[bus].push_back(other);
+            }
+        }
+    }
+    for (auto const& edge : fixture.topo.branch_bus_idx) {
+        physical[edge[0]].push_back(edge[1]);
+        physical[edge[1]].push_back(edge[0]);
+    }
+    return {augmented, physical};
+}
+} // namespace
+
+TEST_CASE("UQ completion narrows only the state corner of a reconstruction") {
+    // Tree 0-1, 1-2, 1-3: the missing pair (0, 2) goes through middle 1. Only the
+    // multiplier columns of h = B_11^-1 B_12 are nonzero, so the state corner of
+    // B_01 h is exactly zero and the pair remains available.
+    WorkspaceCase<NRGain, NRUnknown, 2> fixture{false, false, -1, 1.0};
+    auto const [augmented, physical] = completion_graphs(fixture);
+    constexpr double large = 0x1p120, small = 0x1p-120;
+    auto set = [&](Idx row, Idx col, Eigen::Matrix4d const& value) {
+        for (auto* workspace : {&fixture.covariance}) {
+            auto& block = workspace->augmented_matrix[*workspace->find_block_index(row, col)];
+            for (int r = 0; r != 4; ++r) {
+                for (int c = 0; c != 4; ++c) {
+                    block(r, c) = value(r, c);
+                }
+            }
+        }
+    };
+    Eigen::Matrix4d middle = large * Eigen::Matrix4d::Identity();
+    for (int i = 0; i != 3; ++i) {
+        middle(i, i + 1) = middle(i + 1, i) = small;
+    }
+    Eigen::Matrix4d left = Eigen::Matrix4d::Zero(), right = Eigen::Matrix4d::Zero();
+    left(0, 0) = small;
+    right(3, 3) = small;
+    set(0, 0, large * Eigen::Matrix4d::Identity());
+    set(2, 2, large * Eigen::Matrix4d::Identity());
+    set(1, 1, middle);
+    set(0, 1, left);
+    set(1, 0, left);
+    set(1, 2, right);
+    set(2, 1, right);
+    REQUIRE_FALSE(fixture.covariance.find_block_index(0, 2).has_value());
+    for (bool const diagnostics : {false, true}) {
+        using Workspace = WorkspaceCase<NRGain, NRUnknown, 2>::Workspace;
+        PhysicalBlocks completion_stored{fixture.covariance};
+        CovarianceCompletion<Workspace> completion{fixture.covariance, augmented, physical, completion_stored,
+                                                   diagnostics};
+        auto const actual = completion.pair(0, 2);
+        CHECK(actual.block.valid);
+        CHECK(actual.diagnostic.route == UQPairRoute::separator);
+        CHECK(actual.block.value.isZero(0));
+    }
+}
+
+TEST_CASE("UQ completion preserves the mean path route") {
+    // A singular middle 1 leaves the missing pair (0, 2) to the terminal mean path.
+    using Fixture = WorkspaceCase<NRGain, NRUnknown, 2>;
+    Fixture fixture{false, false, -1, 1.0};
+    auto const [augmented, physical] = completion_graphs(fixture);
+    for (auto* workspace : {&fixture.covariance}) {
+        auto& middle = workspace->augmented_matrix[*workspace->find_block_index(1, 1)];
+        for (int r = 0; r != 4; ++r) {
+            for (int c = 0; c != 4; ++c) {
+                middle(r, c) = r < 2 && c < 2 ? (r == c ? 1.0 : 0.2) : 0.0;
+            }
+        }
+    }
+    using Workspace = Fixture::Workspace;
+    for (bool const diagnostics : {false, true}) {
+        PhysicalBlocks completion_stored{fixture.covariance};
+        CovarianceCompletion<Workspace> completion{fixture.covariance, augmented, physical, completion_stored,
+                                                   diagnostics};
+        auto const actual = completion.pair(0, 2);
+        REQUIRE(actual.block.valid);
+        CHECK(actual.diagnostic.route == UQPairRoute::mean_path);
+        CHECK(actual.block.valid);
+    }
 }
 
 TEST_CASE("UQ variance status thresholds and validity") {

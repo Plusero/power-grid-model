@@ -243,9 +243,15 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
             invalid.valid = false;
             return invalid;
         }
-        auto result = correct_covariance(row, col, source);
+        auto result = correct_covariance(row, col, source, true);
         result.symmetry_projected = result.valid;
         return result;
+    }
+
+    // A separator-reconstructed raw block, with exactly the same alpha, virtual-noise subtraction
+    // and reporting projection as stored blocks.
+    StateCovarianceBlock correct_raw(Idx row, Idx col, RawMatrix const& block) const {
+        return correct_covariance(row, col, block.template topLeftCorner<StateDim, StateDim>(), false);
     }
 
     // The block (row, col) in physical coordinates, J_row C J_col^H; see physical_from_state.
@@ -326,19 +332,19 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
     }
     Gain const& inverse_block(Idx row, Idx col) const { return augmented_matrix[block_index(row, col)]; }
 
-    // Apply variance normalization alpha and (for NRSE) virtual-angle and slack-reference corrections
-    // to `source = 2 * Z_ij`:
-    // - ILSE: V_ij = alpha * Z_ij.
-    // - NRSE: C0_ij = alpha * (Z_ij - T_i * W_v * T_j^T) with W_v = w * I, and for relative angles
-    //         Cr_ij = C0_ij - r_i * d^T - d * r_j^T + c * d * d^T.
-    StateCovarianceBlock correct_covariance(Idx row, Idx col, StateMatrix const& source) const {
+    // ILSE: V_ij = alpha * Z_ij. NRSE: C0_ij = alpha * (Z_ij - T_i * W_v * T_j^T) with W_v = w * I,
+    // and for relative angles Cr_ij = C0_ij - r_i * d^T - d * r_j^T + c * d * d^T (correct_entry).
+    // The source is the orientation sum 2*Z_ij and is halved after normalization when doubled,
+    // otherwise a single orientation Z_ij.
+    StateCovarianceBlock correct_covariance(Idx row, Idx col, StateMatrix const& source, bool doubled) const {
         StateCovarianceBlock result;
         CorrectionNorms norms;
+        double const per_orientation = doubled ? 0.5 : 1.0;
         if constexpr (uses_complex_state) {
             double const alpha = variance_normalization;
             for (int r = 0; r != StateDim; ++r) {
                 for (int c = 0; c != StateDim; ++c) {
-                    DoubleComplex const term = alpha * source(r, c) * 0.5;
+                    DoubleComplex const term = alpha * source(r, c) * per_orientation;
                     result.value(r, c) = term;
                     result.terms[correction_term::normalized_source](r, c) = term;
                     result.term_scale(r, c) = modulus(term);
@@ -353,7 +359,7 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
                         mirror_entry(result, norms, r, c);
                     } else if (!slack_angle_projected(row, col, r, c)) {
                         // The known projected row/column is algebraically exact and stays zero.
-                        correct_entry(result, norms, row, col, r, c, source(r, c));
+                        correct_entry(result, norms, row, col, r, c, source(r, c), doubled);
                     }
                 }
             }
@@ -363,43 +369,45 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
         return result;
     }
 
-    // Compute entry (r, c) of the corrected NRSE state covariance block for bus pair (row, col).
-    // `source` is the doubled orientation sum 2 * Z_ij(r, c), so each unnormalized correction is
-    // accumulated with a factor of 2 and scaled by alpha * 0.5 at the end.
-    // For relative angles, d selects the angle coordinates [0, phase_count), r_i = alpha * rho_i
-    // is the bus-to-slack-phase-a cross-covariance vector, and c = alpha * rho_s[0] is the slack
-    // phase-a angle variance in C0.
+    // One NRSE entry (r,c) of C0_ij and, for relative angles, Cr_ij, with r_i = alpha * rho_i and
+    // c = alpha * rho_s[0] (reference_cross). d selects angle coordinates, so -r_i * d^T applies
+    // when c is an angle, -d * r_j^T when r is an angle, and c * d * d^T when both are.
+    // A doubled source is 2*Z_ij, so each correction is doubled to match; the total is halved after
+    // normalization.
     void correct_entry(StateCovarianceBlock& result, CorrectionNorms& norms, Idx row, Idx col, int r, int c,
-                       double source) const {
+                       double source, bool doubled) const {
+        double const orientations = doubled ? 2.0 : 1.0;
+        double const per_orientation = doubled ? 0.5 : 1.0;
         double const alpha = variance_normalization;
         RealSum sum;
-        std::array<double, correction_term::count> doubled_terms{};
+        std::array<double, correction_term::count> scaled_terms{};
         sum.add(source);
-        doubled_terms[correction_term::normalized_source] = source;
+        scaled_terms[correction_term::normalized_source] = source;
+        // Relative NRSE always has a virtual angle: remove its noise, then apply the slack reference.
         if (report_relative_angle) {
-            double const factor = -2.0 * virtual_angle_weight_;
+            double const factor = -orientations * virtual_angle_weight_;
             for (int phase = 0; phase != phase_count; ++phase) {
                 sum.add_product(factor, virtual_columns_[row](r, phase), virtual_columns_[col](c, phase));
-                doubled_terms[correction_term::virtual_noise] +=
+                scaled_terms[correction_term::virtual_noise] +=
                     factor * virtual_columns_[row](r, phase) * virtual_columns_[col](c, phase);
             }
             if (c < phase_count) {
-                doubled_terms[correction_term::row_reference] = -2.0 * reference_cross(row, r);
-                sum.add(doubled_terms[correction_term::row_reference]);
+                scaled_terms[correction_term::row_reference] = -orientations * reference_cross(row, r);
+                sum.add(scaled_terms[correction_term::row_reference]);
             }
             if (r < phase_count) {
-                doubled_terms[correction_term::col_reference] = -2.0 * reference_cross(col, c);
-                sum.add(doubled_terms[correction_term::col_reference]);
+                scaled_terms[correction_term::col_reference] = -orientations * reference_cross(col, c);
+                sum.add(scaled_terms[correction_term::col_reference]);
             }
             if (r < phase_count && c < phase_count) {
-                doubled_terms[correction_term::slack_reference] = 2.0 * reference_cross(slack_bus, 0);
-                sum.add(doubled_terms[correction_term::slack_reference]);
+                scaled_terms[correction_term::slack_reference] = orientations * reference_cross(slack_bus, 0);
+                sum.add(scaled_terms[correction_term::slack_reference]);
             }
         }
-        result.value(r, c) = alpha * sum.value() * 0.5;
+        result.value(r, c) = alpha * sum.value() * per_orientation;
         double term_scale = 0.0;
         for (std::size_t k = 0; k != correction_term::count; ++k) {
-            double const term = alpha * doubled_terms[k] * 0.5;
+            double const term = alpha * scaled_terms[k] * per_orientation;
             result.terms[k](r, c) = term;
             term_scale += std::abs(term);
             norms.add(k, term);

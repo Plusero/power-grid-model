@@ -198,6 +198,16 @@ class FrobeniusNorm {
     double squares_ = 0.0;
 };
 
+template <class Derived> double frobenius_norm(Eigen::MatrixBase<Derived> const& matrix) {
+    FrobeniusNorm result;
+    for (Eigen::Index r = 0; r != matrix.rows(); ++r) {
+        for (Eigen::Index c = 0; c != matrix.cols(); ++c) {
+            result.add(matrix(r, c));
+        }
+    }
+    return result.value();
+}
+
 // ----- Variance decision -----
 
 // Classify a scalar variance against its roundoff tolerance = round_rtol * absolute_scale:

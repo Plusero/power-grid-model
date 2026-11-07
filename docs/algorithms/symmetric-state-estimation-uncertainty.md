@@ -264,3 +264,58 @@ dense contractions, transformer/shunt coefficients, absolute and relative
 references, virtual-angle correction, and the required ILSE power
 pseudo-covariance. Solver integration checks preserve estimates and previously
 computed voltage results while sharing one covariance workspace and selected-inverse sweep.
+
+## Missing covariance blocks
+
+`CovarianceCompletion` uses one immutable selected-inverse workspace for an island.
+An entry in the original filled LU pattern is available even when its numerical
+value is zero. Invalid stored blocks remain invalid. Completion never changes the
+factor pattern, source blocks, or donor pools.
+
+The augmented graph is the unfactorized stored Y-bus support, including structural
+zeros and excluding LU fill. Candidates are its common middle buses, visited in
+ascending mathematical bus order. Original filled-pattern donors may include
+ordinary fill. Missing/nonfinite donors or no candidates make the pair invalid.
+Only a singular full middle block or a singular-value ratio below 1e-12 advances
+the search; equality passes. The first conditioned middle solves the complete
+complex 2x2 ILSE or real 4x4 NRSE block and forms one forward product. Fixed-size
+double LU/substitution uses one ordinary-double residual refinement, followed
+by checked double products. This residual solve is retained; it is not
+rounding-compensated arithmetic. A nonfinite product makes the pair invalid;
+the stored factors and inverse blocks are never changed.
+State selection, normalization, virtual-noise removal and reporting-reference
+correction follow the direct workspace path exactly once.
+
+Iterative DFS computes articulation labels without recursion. A separating middle
+certifies the exact identity (`separator`); other conditioned middles retain an
+approximate `augmented_path`. Finite scaled solve residuals above 1e-12 and
+normalized correlations above 1+1e-6 set the approximation warning; they are not
+routing criteria. Failed or unrepresentable arithmetic and invalid endpoint
+marginals remain invalid. No later candidate is inspected after selection.
+
+Physical marginals use principal square roots, negative-roundoff clipping at
+1000 double eps times their actual construction scale, and a strict relative
+support threshold of 1000 double eps times the largest eigenvalue. Positive
+unsupported eigenvalues remain in the root. Stored orientations must agree;
+finite support/correlation exceedances retain the original physical donor with
+diagnostics. These pair checks do not establish global positive semidefiniteness.
+
+Only exhaustion of a nonempty augmented candidate set by conditioning failures
+permits terminal `mean_path`. It equally averages original physical two-branch
+products, using the supported middle pseudoinverse and retaining zero products
+in the denominator. Rank-zero middles are ineligible; missing/invalid required
+donors, invalid marginals, empty pools or failed arithmetic are invalid. There
+are no local/island means or heuristic-zero completions. A rank-zero target
+receives `zero_target` only when a nonempty terminal mean actually computes zero;
+nonzero unsupported augmented or mean-path blocks retain their diagnostics.
+Physical path blocks already include corrections and are not corrected again.
+
+Means use ordinary double sums. There is no unit-scale floor. Pair results are
+canonical and cached once, with their route, middle bus and approximation warning.
+The reverse is the adjoint. Cached results never become donors, and completion
+never changes the factor pattern.
+
+Construction uses O(n+e+s) storage for graphs and original stored blocks; each
+missing pair intersects the two sorted augmented adjacency lists and examines
+physical common neighbors. No dense
+island matrix is created in production.
