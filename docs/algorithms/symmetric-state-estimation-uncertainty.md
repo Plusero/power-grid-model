@@ -75,8 +75,8 @@ ILSE and NRSE obtain the LU factorization of $\bar{A}$ as follows:
   permutations without reassembling or refactorizing the gain (zero UQ
   factorizations). Because selective inversion overwrites its input buffer, the
   workspace copies the factors first. If ordinary ILSE had to perturb a nearly
-  singular pivot during factorization (`has_pivot_perturbation()`), the factors
-  cannot be inverted selectively and are rejected upfront.
+  singular pivot during factorization, the existing selective-inverse routine
+  rejects the factors.
 - **NRSE** assembles $\bar{A}$ at the converged state phasors and performs one
   unperturbed LU factorization. Before factorization, the assembled matrix must
   be finite and Hermitian within a relative Frobenius tolerance of $10^{-12}$,

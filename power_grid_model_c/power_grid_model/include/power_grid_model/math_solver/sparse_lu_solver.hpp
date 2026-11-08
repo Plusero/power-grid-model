@@ -333,9 +333,6 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
         }
     }
 
-    // Return true if the last factorization had to perturb a nearly singular pivot.
-    bool has_pivot_perturbation() const { return has_pivot_perturbation_; }
-
     // Compute Takahashi dependency blocks over the solver's stored sparse pattern
     // row_indptr_/col_indices_. This pattern includes fill-ins and can be larger
     // than the downstream target pattern, e.g. the original y_bus pattern.

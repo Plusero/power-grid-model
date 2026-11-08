@@ -126,15 +126,11 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
         assert(uses_complex_state || report_relative_angle == (virtual_angle_bus_ >= 0));
 
         // 1-2. Reuse ILSE's LU factors, or validate, symmetrize, and factorize NRSE's returned-state gain.
+        // Perturbed ILSE factors are rejected by the selective inverse in step 5.
         Solver owned_solver{row_indptr_, col_indices_, lu_diag_};
         Solver& solver = factorization ? factorization->solver : owned_solver;
         typename Solver::BlockPermArray owned_perm;
-        if (factorization) {
-            // Selective inversion requires unperturbed LU factors; reject perturbed ILSE factors upfront.
-            if (solver.has_pivot_perturbation()) {
-                throw SparseMatrixError{};
-            }
-        } else {
+        if (!factorization) {
             validate_assembly(y_bus.lu_transpose_entry());
             owned_perm.resize(u_.size());
             solver.prefactorize(augmented_matrix, owned_perm, false);
@@ -445,22 +441,17 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
             lower.template triangularView<Eigen::StrictlyLower>() = packed;
             upper.template triangularView<Eigen::Upper>() = packed;
             RawMatrix pivot = lower * upper;
-            if (!pivot.allFinite()) {
-                throw SparseMatrixError{};
-            }
             // Equilibrate rows and then columns by their infinity norms.
-            auto const equilibrate = [](auto&& line) {
-                double const scale = line.cwiseAbs().maxCoeff();
-                if (!(scale > 0.0)) {
-                    throw SparseMatrixError{};
-                }
-                line /= scale;
-            };
+            auto const equilibrate = [](auto&& line) { line /= line.cwiseAbs().maxCoeff(); };
             for (int i = 0; i != pivot.rows(); ++i) {
                 equilibrate(pivot.row(i));
             }
             for (int i = 0; i != pivot.cols(); ++i) {
                 equilibrate(pivot.col(i));
+            }
+            // A nonfinite entry or a zero row/column leaves a NaN here (x/inf, 0/0); JacobiSVD must not see it.
+            if (!pivot.allFinite()) {
+                throw SparseMatrixError{};
             }
             if (pivot_condition_certified(pivot)) {
                 continue;

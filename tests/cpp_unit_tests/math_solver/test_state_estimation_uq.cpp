@@ -458,8 +458,8 @@ TEST_CASE_TEMPLATE("UQ request bounds and unsupported categories", Sym, symmetri
 TEST_CASE_TEMPLATE("UQ numerical failure keeps the estimate and reports requested uncertainty invalid", Solver,
                    IterativeLinearSESolver<symmetric_t>, NewtonRaphsonSESolver<symmetric_t>) {
     // An unmeasured source at bus 0 and voltage sensor + exact zero injection at bus 1 leaves the
-    // bus-0 pivot singular without perturbation. Ordinary SE perturbs the pivot and converges; UQ
-    // rejects perturbed ILSE factors and unperturbed singular NRSE pivots.
+    // bus-0 pivot singular without perturbation. Ordinary SE perturbs the pivot and converges; the
+    // selective inverse rejects perturbed ILSE factors, and NRSE's unperturbed UQ factorization fails.
     auto topo = voltage_measurement_topology();
     topo.sources_per_bus = {from_sparse, {0, 1, 1}};
     topo.voltage_sensors_per_bus = {from_sparse, {0, 0, 1}};
