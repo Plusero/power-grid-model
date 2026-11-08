@@ -136,7 +136,7 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
             }
         }
 
-        // 5. Overwrite `augmented_matrix` with the selected inverse blocks B_ij on the filled LU pattern.
+        // 5. Overwrite `augmented_matrix` with the selective inverse blocks B_ij on the filled LU pattern.
         solver.inplace_selective_inverse_with_prefactorized_matrix(augmented_matrix, perm);
         for (auto const& block : augmented_matrix) {
             if (!block.isFinite().all()) {
@@ -210,7 +210,7 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
     }
 
     // Accessible to the voltage uncertainty functions below and the dense-reference unit tests.
-    std::vector<Gain> augmented_matrix; // LU factor storage, overwritten in-place by selected inverse blocks B_ij
+    std::vector<Gain> augmented_matrix; // LU factor storage, overwritten in-place by selective inverse blocks B_ij
     double variance_normalization;      // shared variance scale alpha
     Idx slack_bus;
     bool report_relative_angle;

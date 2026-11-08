@@ -685,7 +685,7 @@ template <class Tensor, class RHSVector, class XVector> class SparseLUSolver {
         }
     }
 
-    // Update selected inverse blocks for pivot p: column below p, row right of p, and diagonal.
+    // Update selective inverse blocks for pivot p: column below p, row right of p, and diagonal.
     // Each sum runs over later neighbors N_p = {k > p : (p,k) is in the filled LU pattern}.
     // Trailing Z_ij blocks with i,j > p are already available from the reverse pivot sweep.
     void update_selective_inverse_pivot_row_and_column(std::vector<Tensor>& data, Idx pivot_row_col) const
