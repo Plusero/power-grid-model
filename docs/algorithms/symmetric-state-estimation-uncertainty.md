@@ -4,7 +4,8 @@
 # Internal symmetric state estimation uncertainty
 
 The optional `StateEstimationUQContext` is an internal, synchronous math-solver
-interface. It leaves `SolverOutput` and public calculation signatures unchanged.
+interface for quantifying the uncertainty of state-estimation results. It leaves
+`SolverOutput` and public calculation signatures unchanged.
 Requests use island-local mathematical indices, checked against the bus count.
 Voltage requests may be unordered or repeated; result rows follow request order.
 A row selecting no quantities retains the default `not_requested` fields.
@@ -18,163 +19,204 @@ reported invalid.
 This first implementation supports voltage requests for both symmetries; branch
 and injection requests are declared but fail explicitly.
 
-## Prepared model and normalization
+## Prepared model and variance normalization
 
-The calculation reuses `MeasuredValues`, including aggregation, appliance status,
-processed exact zero injections, independently modeled sensor variances and the
-existing measurement conversions. Values and standard deviations are per unit;
-angles use radians. `variance_normalization()` retains the minimum finite,
-strictly positive prepared voltage variance or complex P/Q (or current real/imag)
-variance sum. Exact zero constraints and missing/infinite rows do not select the
-scale. If no positive stochastic row exists the normalization is one. The
-ordinary finite reciprocal normalization preserves existing rounding; division
-handles reciprocal overflow. This rule is shared by ordinary estimation.
+Uncertainty quantification reuses `MeasuredValues`, including sensor
+aggregation, appliance status, exact zero-injection constraints, independent
+modeled sensor variances, and per-unit/radian measurement conversions. Voltage
+magnitudes and their standard deviations are in per unit; voltage angles and
+their standard deviations are in radians.
 
-ILSE freezes the estimator's transformed independent complex measurements. Its
-power-to-current conversion retains the existing near-unit-voltage variance
-approximation and combines real and imaginary variances. Proper complex voltage
-deviations (zero state pseudo-covariance) are an explicit approximation, including
-magnitude-only inputs. This is not general physical-noise sandwich propagation.
-NRSE uses its local real polar Jacobian at the returned phasors, with coordinates
-`[arg(U), abs(U)]`, independently of signed radii during iteration.
+To keep the augmented system well-scaled during factorization, ordinary state
+estimation normalizes all prepared variances by a shared positive scalar
+$\alpha = \texttt{variance\_normalization()}$, defined as the minimum finite,
+strictly positive prepared voltage variance or complex power/current variance
+sum across the island (or $1$ if no positive stochastic measurement exists).
+Exact zero-injection constraints and missing or infinite-variance rows do not
+participate in selecting $\alpha$. When $\alpha^{-1}$ is finite, weights scale by
+multiplication; otherwise division by $\alpha$ avoids reciprocal overflow.
+
+The two state estimators linearize the network differently:
+
+- **Iterative Linear State Estimation (ILSE)** solves for complex nodal voltages
+  $U$ using state-independent nodal admittance equations and transformed complex
+  measurements. Power measurements are converted to equivalent current
+  variances using the existing near-unit-voltage approximation, combining active
+  and reactive variances. Voltage perturbations are modeled as proper complex
+  random variables (zero pseudo-covariance), including when only voltage
+  magnitudes are measured.
+- **Newton-Raphson State Estimation (NRSE)** linearizes the real measurement
+  equations at the converged voltage phasors $U$ in canonical polar coordinates
+  $q = [\arg(U), |U|]$ per phase, regardless of whether signed voltage radii
+  were used during the Newton iterations.
 
 ## Sparse covariance calculation
 
-ILSE reuses the estimator's state-independent LU factors and matching block
-permutations. It copies the factors for the destructive selected-inverse sweep;
-there is no second gain assembly, reuse eligibility check or refactorization.
-NRSE assembles a dedicated augmented matrix at the returned state.
-Each bus has a complete complex 2 by 2 ILSE block, or a real 4 by 4 NRSE
-block, including multipliers. Exact injection constraints remain in this matrix;
-an unconstrained gain inverse is not substituted. The symbolic LU pattern,
-including ordinary fill supplied by topology preparation, is retained.
+For each island, PGM formulates state estimation as a bus-interleaved,
+variance-normalized augmented KKT system
 
-The dedicated NRSE assembly must be finite and Hermitian to relative Frobenius
-tolerance `1e-12`. Accepted assembly roundoff is canonicalized with overflow-safe
-double midpoint operations before factorization, which disables pivot
-perturbation. ILSE uses the ordinary factors directly, without an additional
-assembly check or canonicalization; the existing selected-inverse kernel rejects
-perturbed factors. For both estimators, every packed diagonal LU pivot is
-reconstructed as `L U`, equilibrated by row then column maxima, and checked for
-a singular-value ratio of at least `1e-12`. These are numerical checks, not a
-physical observability certificate or a full-island condition estimate.
+```math
+\bar{A} = \Pi \begin{bmatrix} \bar{G} & Q^H \\ Q & -\bar{R} \end{bmatrix} \Pi^T,
+\qquad B = \bar{A}^{-1},
+```
 
-Covariance symmetry uses a separate bounded tolerance `sqrt(double_epsilon)`.
-This bounds symmetry projection size; it is not a covariance forward-error or
-conditioning certificate.
-It does not change `round_rtol = 1000*double_epsilon`, used for negative variance,
-rank and scalar validity checks. No factor residual, inverse-condition estimate
-or additional diagnostic solves are computed.
+where $\bar{G}$ contains normalized direct voltage-measurement weights, $Q$ is
+the admittance or linearized branch/injection constraint matrix, $\bar{R}$
+contains normalized auxiliary measurement variances (zero for exact injection
+constraints), and $\Pi$ interleaves state coordinates $q$ and auxiliary
+multipliers at each bus. Each bus block is $2 \times 2$ complex (balanced) or
+$6 \times 6$ complex (three-phase) for ILSE, and $4 \times 4$ real (balanced) or
+$12 \times 12$ real (three-phase) for NRSE. Exact injection constraints remain
+in $\bar{A}$; an unconstrained normal-equation inverse is not substituted.
 
-The upstream block selective-inverse sweep runs after all selector solves. The
-workspace's `augmented_matrix` buffer starts with NRSE's assembled matrix or
-ILSE's copied LU factors. After NRSE factorization and all selector solves, the
-sweep overwrites it with complete raw inverse blocks on the original filled pattern.
-Physical covariance is derived separately, restoring normalization
-exactly once. No dense island covariance or physical-noise response matrix is
-allocated. Raw blocks, selectors and results live only for this calculation.
-The UQ factorization count is zero for ILSE and one for NRSE.
-Stored covariance views compare the raw state corners in double precision,
-excluding the algebraically removed slack-angle row and column; positive
-normalization cancels from the symmetry ratio.
-The skew must be at most `sqrt(double_epsilon)` times the state-corner Frobenius
-scale (twice the mean orientation scale for off-diagonal pairs). Accepted state
+ILSE and NRSE obtain the LU factorization of $\bar{A}$ as follows:
+
+- **ILSE** reuses the estimator's state-independent LU factors and block
+  permutations without reassembling or refactorizing the gain (zero UQ
+  factorizations). Because selective inversion overwrites its input buffer, the
+  workspace copies the factors first. If ordinary ILSE had to perturb a nearly
+  singular pivot during factorization (`has_pivot_perturbation()`), the factors
+  cannot be inverted selectively and are rejected upfront.
+- **NRSE** assembles $\bar{A}$ at the converged state phasors and performs one
+  unperturbed LU factorization. Before factorization, the assembled matrix must
+  be finite and Hermitian within a relative Frobenius tolerance of $10^{-12}$,
+  and any accepted assembly roundoff is symmetrized using overflow-safe midpoint
+  averaging.
+
+For both estimators, every diagonal LU pivot block $L_{ii} U_{ii}$ is
+reconstructed, equilibrated by row and column maxima, and required to have a
+singular-value ratio $\sigma_{\min} / \sigma_{\max} \ge 10^{-12}$. These local
+checks guard against ill-conditioned pivot blocks during selective inversion;
+they are not a global observability certificate or a condition-number estimate
+for the full island matrix.
+
+Before selective inversion overwrites the LU factors in `augmented_matrix`, the
+workspace executes any unit-selector solves ($\bar{A} t = e$) needed for nonlocal
+angle-reference columns. The block Takahashi selective-inverse sweep
+(`inplace_selective_inverse_with_prefactorized_matrix`) then computes the raw
+inverse blocks $B_{ij}$ on the filled LU sparsity pattern, without allocating a
+dense island inverse.
+
+When a state covariance block is requested for bus pair $(i, j)$, the workspace
+extracts the raw state corners $B_{ij}[q,q]$ and $B_{ji}[q,q]^H$ (excluding any
+algebraically zeroed slack-angle row or column) and checks their Hermitian skew:
+the Frobenius norm of $B_{ij}[q,q] - B_{ji}[q,q]^H$ must not exceed
+$\sqrt{\varepsilon_{\text{mach}}}$ times the state-corner Frobenius scale (twice
+the mean orientation norm for off-diagonal pairs). Accepted state
 corners sum the two orientations in a local copy, apply any shared
 virtual/reference corrections, and restore normalization and the one-half
 orientation factor.
 Construction scales sum the Frobenius norms of the normalized correction
-terms. Reverse access returns the adjoint. Raw augmented donors remain unchanged.
+terms. Reverse access returns the adjoint. Stored augmented-inverse blocks
+remain unchanged.
 
-For ILSE the state covariance is `V_ij = alpha B_ij[U,U]`. Nonzero voltage
-magnitude variance is `Re(V_ii)/2`; proper-model angle covariance is
-`Re(V_ij/(U_i conj(U_j)))/2`. Relative angles use the slack-angle difference,
-including bus/slack cross covariance obtained with one augmented selector solve.
-The covariance stays in the final estimator phasor frame.
+From the symmetrized state corner $Z_{ij} = \frac{1}{2}(B_{ij}[q,q] + B_{ji}[q,q]^H)$,
+physical state covariance and voltage uncertainties are obtained as follows:
 
-For NRSE a normalized deterministic virtual angle, when present, is removed by
-`C0_ij = alpha (B_ij[q,q] - w t_i t_j^T)`. Its bus can differ from the reporting
-slack. Relative reporting projects out the slack-angle column using the cached
-selector; coincident virtual/slack selectors share one solve. Only the known
-reported slack-angle row and column are set algebraically to zero. Magnitude
-and angle variances are the canonical polar diagonal entries, without an ILSE
-factor of one half.
+- **ILSE:** The complex voltage covariance block is $V_{ij} = \alpha Z_{ij}$ in
+  the estimator's phasor frame. Under the proper complex Gaussian model at a
+  nonzero estimated voltage $U_i$, the voltage-magnitude variance is
+  $\operatorname{Var}(|U_i|) = \frac{1}{2}\operatorname{Re}(V_{ii})$ and the
+  phase-angle covariance is
+  $C_{\theta,ij} = \frac{1}{2}\operatorname{Re}(V_{ij} / (U_i U_j^*))$. When
+  angles are reported relative to the slack bus $s$ (phase $a$), the relative
+  angle variance is $C_{\theta,ii} + C_{\theta,ss} - 2 C_{\theta,is}$, where the
+  cross covariance $V_{is}$ is obtained from one augmented selector solve for the
+  slack column.
+- **NRSE:** When a deterministic virtual angle reference is present at bus $v$
+  with normalized weight matrix $W_v = w I$, its fictitious measurement noise is
+  removed by $C^0_{ij} = \alpha (Z_{ij} - T_i W_v T_j^T)$. When angles are
+  reported relative to the slack bus, the slack phase-$a$ angle error is
+  projected out using the cached slack selector column (reusing the virtual
+  column when the virtual reference is on the slack bus), and the reported
+  slack phase-$a$ angle row and column are set algebraically to zero. Magnitude
+  and angle variances are the canonical polar diagonal entries, without an ILSE
+  factor of one half.
 
 ### Why the virtual-angle correction is needed
 
-Without an absolute voltage-angle measurement, the usual magnitude and power
-measurements leave a common phasor rotation undetermined. Existing NRSE adds a
-deterministic virtual angle at the voltage-measured slack bus, or at the first
-voltage-measured bus if necessary. It uses that bus's prepared voltage weight.
-The reference remains part of the estimator; its target has no random error.
+Without an absolute voltage-angle measurement, magnitude and power measurements
+leave a common phasor rotation undetermined. To make the angle reference
+well-posed, NRSE inserts a deterministic virtual-angle measurement at the
+slack bus if it has a voltage sensor, or else at the first voltage-measured bus
+$v$, borrowing that bus's normalized voltage weight $w = \alpha / \sigma_{U,v}^2$.
 
-A plain inverse gain would include the covariance associated with treating that
-weighted virtual target as a noisy measurement. To remove this fictitious noise,
-let `Z` denote the inverse's state block, `E` select the virtual angle coordinates,
-and `Wv` contain their normalized weights. With real sensor Jacobian `H`,
-unnormalized prepared noise covariance `R`, and `W = alpha R^-1`, the equivalent
-constrained normal gain is `G = H^T W H + E Wv E^T`. The constrained inverse
-identities give `Z G Z = Z`. Thus propagation of only the real sensor errors gives
+Directly inverting the augmented gain treats that virtual reference as if it
+were a noisy angle measurement with variance $\sigma_{U,v}^2$. To propagate only
+actual sensor noise, let $Z$ denote the state block of $\bar{A}^{-1}$, $E$ select
+the virtual-angle coordinates, and $W_v = w I_m$ ($m = 1$ for balanced, $3$ for
+three-phase). With real sensor Jacobian $H$, unnormalized sensor noise
+covariance $R$, and normalized weights $W = \alpha R^{-1}$, the equivalent
+constrained normal gain is $G = H^T W H + E W_v E^T$, and the KKT inverse
+identities give $Z G Z = Z$. Propagating only the actual sensor errors yields
 
 ```math
 C^0=Z H^T W R W H Z
    =\alpha\left(Z-TW_vT^T\right),\qquad T=ZE.
 ```
 
-Exact constraints remain in the augmented system and carry no sensor noise.
-This identity uses the equivalent normal equations only for explanation;
-production retains the sparse augmented formulation. It computes each column
-of `T` by an LU solve with a unit selector, taking the state rows of the result,
-before the selected-inverse sweep overwrites the factors.
+Exact zero-injection constraints remain in the sparse augmented system and carry
+no sensor noise. Production code never forms normal equations; it computes each
+column of $T$ before selective inversion by solving $\bar{A} t^{(p)} = e_{(v,\theta_p)}$
+with a unit right-hand side and retaining the state rows at each bus:
 
-For balanced NRSE there is one virtual column. Three-phase NRSE has three,
-with `Wv = w I3`, so each bus pair subtracts
-`alpha * w * sum_p T_i[:,p] T_j[:,p]^T`. These rows can affect relative-phase
-directions as well as the common angle; the correction retains their
-deterministic effect on the estimator and removes only their noise contribution.
+```math
+C^0_{ij} = \alpha \left(Z_{ij} - w \sum_{p=0}^{m-1} T_i[:,p]\, T_j[:,p]^T\right).
+```
 
-Reporting relative angles is a separate transformation of `C^0`: subtract the
-slack phase-a angle error from every reported phase-angle error, retaining the
-bus/slack cross covariance. Only the reported slack-a angle is identically zero;
-slack b/c relative angles and voltage magnitudes can remain uncertain. The
-virtual reference bus and reporting slack need not be the same bus.
+In three-phase NRSE ($m = 3$), the three virtual rows constrain all three phases
+at bus $v$ and can affect inter-phase angle differences as well as the common
+rotation; subtracting $\alpha T W_v T^T$ preserves their deterministic reference
+effect on the state estimate while removing their fictitious noise contribution.
+
+Reporting angles relative to the slack bus is a separate linear transformation
+of $C^0$: subtracting the slack phase-$a$ angle perturbation from every phase
+angle yields
+
+```math
+C^r_{ij} = C^0_{ij} - r_i d^T - d r_j^T + c\, d d^T,
+```
+
+where $d$ selects the angle coordinates of a bus block, $r_i = C^0_{i,s} e_0$ is
+the bus-to-slack-phase-$a$ cross-covariance column, and $c = C^0_{s,s}(0,0)$ is
+the slack phase-$a$ angle variance in $C^0$. Only the reported slack phase-$a$
+angle variance is identically zero; slack phases $b$ and $c$ and all voltage
+magnitudes retain their physical uncertainty.
 
 ## Validity and arithmetic
 
-All UQ arithmetic uses ordinary rounded binary64 (`double`) products and sums,
-including contractions, norms, construction scales and standard deviations.
-There is no compensated summation, error-free product expansion, high/low
-residue storage or wider-precision retry.
+All UQ calculations use standard IEEE-754 binary64 (`double`) arithmetic. Each
+diagonal state covariance block $C_{ii}$ must be finite, Hermitian within
+$\sqrt{\varepsilon_{\text{mach}}}$, and positive semidefinite within roundoff:
 
-There is no blanket input/gain magnitude prescreen. Covariance construction
-retains its assembly, pivot and finiteness checks. Final scalar contractions
-retain their variance and total-underflow checks. These do not guarantee
-arbitrary-range safety: an intermediate rounded to zero before it reaches a
-tracked contraction can be indistinguishable from a structural zero.
-Covariance symmetry checks use the
-bounded tolerance and raw state-corner scale above. Negative-eigenvalue checks
-continue to use `round_rtol` times the correction-term construction scale.
-Neither check introduces a unit floor.
+```math
+\lambda_{\min}(C_{ii}) \ge -\texttt{round\_rtol} \cdot S_C,
+\qquad \texttt{round\_rtol} = 1000\,\varepsilon_{\text{mach}},
+```
 
-This arithmetic choice trades precision for runtime. Cancellation may erase a
-small contribution or change a near-threshold status relative to an extended or
-compensated calculation. The validity comparisons use the rounded values and
-their existing thresholds directly; they do not certify the sign of an exact
-real-arithmetic result. No fixed cross-platform ulp agreement is promised.
+where the construction scale $S_C = \sum_k \|C_k\|_F$ sums the Frobenius norms of
+the block's normalized correction terms.
 
-A scalar contraction retains its signed raw variance and sum of absolute terms.
-With `round_rtol = 1000 * double_epsilon`, only a negative value within
-`round_rtol * absolute_scale` is clipped to zero. Larger negativity or nonfinite
-arithmetic is invalid and has missing sigma. Voltage variances are real by
-construction, so no imaginary residual arises.
-Exactly zero nominal voltage makes magnitude and angle derivatives invalid.
-There is no arbitrary near-zero cutoff; first-order accuracy can be poor near
-zero even when the derivative exists. A failed assembly, pivot, perturbed-factor
-or inverse-finiteness check marks every requested uncertainty invalid and keeps
-the estimate; no other covariance algorithm is tried. This includes ILSE factors
-that the estimator had to perturb, which are rejected before any pivot check or
-solve.
+Each scalar variance contraction records its signed `raw_variance` $v$, the sum
+of term magnitudes `absolute_scale` $s = \sum_k |t_k|$, and whether any term was
+nonzero in exact arithmetic:
 
-The independent dense test references are test-only. They exercise both concrete
-block sizes, radial and meshed fill, internal block pivots, normalization,
-virtual/reference selectors, exact injection constraints, request behavior
+- If a calculation is undefined (e.g., nominal voltage is zero so magnitude and
+  angle derivatives are undefined, or the source covariance block is invalid),
+  nonfinite, lost all nonzero terms to subnormal underflow, or falls below
+  $-\texttt{round\_rtol} \cdot s$, it is reported as `invalid` with `sigma = NaN`.
+- If $-\texttt{round\_rtol} \cdot s \le v < 0$, negative roundoff is clipped to
+  `sigma = 0.0` with status `clipped_roundoff` while preserving the signed
+  `raw_variance`.
+- Otherwise, the variance is `valid` with $\sigma = \sqrt{v}$.
+
+If the island's UQ system fails an assembly, perturbed-factor, pivot, or
+inverse-finiteness check (`SparseMatrixError`), the converged state estimate is
+returned unchanged and every requested uncertainty is marked `invalid`.
+
+The unit tests verify the sparse workspace and voltage uncertainty calculations
+against independent dense augmented inverses across both estimators and symmetry
+modes, radial and meshed topologies with fill-in, variance normalization scales,
+virtual and slack angle references, exact injection constraints, request
+validation, UQ numerical-failure handling,
 and unchanged estimates with uncertainty enabled.

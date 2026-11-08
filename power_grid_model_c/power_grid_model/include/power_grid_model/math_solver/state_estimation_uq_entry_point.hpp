@@ -4,8 +4,7 @@
 
 #pragma once
 
-// Shared entry point for state-estimation UQ, used by ILSE and NRSE.
-// Calls the covariance and requested-result calculations.
+// Shared post-solve entry point for state-estimation uncertainty quantification (ILSE and NRSE).
 
 #include "measured_values.hpp"
 #include "state_estimation_uq.hpp"
@@ -21,7 +20,7 @@
 
 namespace power_grid_model::math_solver::state_estimation_uq {
 
-// Every requested quantity is invalid, with NaN sigma and diagnostics.
+// Mark every requested quantity as invalid (sigma and raw_variance remain NaN).
 template <symmetry_tag sym> StateEstimationUQResult<sym> invalid_results(StateEstimationUQRequest const& request) {
     StateEstimationUQResult<sym> result;
     result.voltage.resize(request.voltage.size());
@@ -40,12 +39,11 @@ template <symmetry_tag sym> StateEstimationUQResult<sym> invalid_results(StateEs
     return result;
 }
 
-// UQ entry point after ordinary SE has produced the current math model's estimate.
-// Construct one covariance workspace and calculate requested results.
-// ILSE supplies existing factors; NRSE supplies the gain at the returned state.
-// The estimate does not depend on the uncertainty: if the gain fails a numerical check
-// (assembly, pivot, perturbed factors, or a nonfinite inverse), every requested quantity
-// is reported invalid instead of discarding the estimate.
+// Compute requested uncertainties for one island after state estimation converges.
+// ILSE supplies its existing LU factors via `factorization`; NRSE supplies the gain matrix
+// reassembled at the converged state `u`. If the UQ matrix or factorization fails a numerical
+// check (SparseMatrixError), the state estimate is preserved and all requested uncertainties
+// are returned as invalid.
 template <class Workspace, class Gain>
 StateEstimationUQResult<typename Workspace::Symmetry>
 calculate_results(YBus<typename Workspace::Symmetry> const& y_bus, std::vector<Gain> const& gain,
@@ -53,7 +51,8 @@ calculate_results(YBus<typename Workspace::Symmetry> const& y_bus, std::vector<G
                   ComplexValueVector<typename Workspace::Symmetry> const& u, StateEstimationUQRequest const& request,
                   Idx virtual_bus = -1, double virtual_weight = 0.0,
                   typename Workspace::Factorization const* factorization = nullptr) {
-    // Stochastic Rbar = R/alpha, Wbar = alpha*W; covariance corrections restore one factor of alpha.
+    // Prepared variances are scaled by 1/alpha (Rbar = R/alpha, Wbar = alpha*W);
+    // the workspace multiplies inverse state blocks by alpha to restore physical units.
     double const alpha = measured_values.variance_normalization();
     try {
         Workspace const workspace{y_bus,       gain,           alpha,        u, measured_values.has_angle(),

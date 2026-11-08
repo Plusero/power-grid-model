@@ -4,7 +4,7 @@
 
 #pragma once
 
-// Types for uncertainty requests, results, and solver context.
+// Request, result, and context types for state-estimation uncertainty quantification (UQ).
 
 #include "../common/common.hpp"
 #include "../common/enum.hpp"
@@ -16,6 +16,9 @@
 
 namespace power_grid_model::math_solver {
 
+// Uncertainty requests use indices local to one island's math model.
+// Branch and injection requests are declared here to keep the solver dispatch
+// interface stable across UQ stages; validate_context rejects them until implemented.
 struct VoltageUQRequest {
     Idx bus;
     bool magnitude;
@@ -41,6 +44,11 @@ struct StateEstimationUQRequest {
     bool empty() const { return voltage.empty() && branch.empty() && injection.empty(); }
 };
 
+// Per-phase uncertainty status and result values.
+// Voltage magnitudes use per-unit (raw_variance in p.u.^2, sigma in p.u.);
+// voltage angles use radians (raw_variance in rad^2, sigma in rad).
+// Small negative variances within roundoff tolerance are clipped to sigma = 0
+// with status clipped_roundoff; unrequested or invalid quantities keep NaN sigma.
 enum class UQVarianceStatus : IntS { not_requested, valid, clipped_roundoff, invalid };
 struct UQPhaseValue {
     double raw_variance = std::numeric_limits<double>::quiet_NaN();
@@ -58,13 +66,14 @@ template <symmetry_tag sym> struct VoltageUQResult {
 template <symmetry_tag sym> struct StateEstimationUQResult {
     std::vector<VoltageUQResult<sym>> voltage;
 };
+// Non-owning request/result context passed to run_state_estimation for one island.
 template <symmetry_tag sym> struct StateEstimationUQContext {
     StateEstimationUQRequest const& request;
     StateEstimationUQResult<sym>& result;
 };
 
 namespace state_estimation_uq {
-// Reject unsupported requests and invalid bus indices.
+// Reject unsupported request categories and out-of-range bus indices before solving.
 template <symmetry_tag sym> void validate_context(StateEstimationUQContext<sym>* uq, Idx n_bus) {
     if (!uq) {
         return;
