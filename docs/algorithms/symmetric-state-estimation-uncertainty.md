@@ -232,7 +232,13 @@ original filled pattern. Stored physical blocks consume the workspace's
 canonical covariance view. Reference blocks use the same bounded symmetry
 correction before their orientation average is used. All branch outputs use
 the same normalized state corner; an already canonical view is not converted
-or checked again.
+or checked again. Because a contraction sums both terminals' entries, a
+negative contribution from one bus could be masked by the other. Each terminal's
+diagonal physical block $D$ must therefore be positive semidefinite within
+roundoff, $\lambda_{\min}(D) \ge -\texttt{round\_rtol} \cdot S_D$, where the
+construction scale $S_D$ sums the Frobenius norms of the mapped correction
+terms; otherwise every output using that terminal is invalid. The check runs
+once per bus and call.
 
 ILSE applies the proper complex voltage covariance as an equivalent real
 rectangular covariance with its required factor of one half. Power derivatives

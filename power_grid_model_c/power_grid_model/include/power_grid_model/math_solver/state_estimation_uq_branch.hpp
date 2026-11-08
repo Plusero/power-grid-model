@@ -6,8 +6,13 @@
 
 #include "state_estimation_uq_workspace.hpp"
 
+#include <Eigen/Eigenvalues>
+
 #include <algorithm>
+#include <cmath>
 #include <optional>
+#include <type_traits>
+#include <vector>
 
 namespace power_grid_model::math_solver::state_estimation_uq {
 
@@ -73,16 +78,44 @@ auto physical_pair(Workspace const& workspace, Idx first, Idx second, typename W
 template <class Workspace> auto physical_pair(Workspace const& workspace, Idx first, Idx second) {
     return physical_pair(workspace, first, second, workspace.physical_block(first, second));
 }
+// A branch contraction sums all terminal entries, so a negative contribution from one bus's
+// block can be masked by the others. Accept a Hermitian physical diagonal block only if
+// lambda_min(D) >= -round_rtol * construction_scale.
+template <class Block> bool positive_semidefinite(Block const& block) {
+    using Matrix = std::remove_cvref_t<decltype(block.value)>;
+    double const tolerance = round_rtol * block.construction_scale;
+    double smallest{};
+    if constexpr (Matrix::RowsAtCompileTime == 1) {
+        smallest = std::real(block.value(0, 0));
+    } else if constexpr (Matrix::RowsAtCompileTime == 2) {
+        // Closed form for the real symmetric NRSE block [[x, y], [y, z]].
+        double const x = block.value(0, 0);
+        double const y = block.value(1, 0);
+        double const z = block.value(1, 1);
+        double const half_difference = (x - z) / 2.0;
+        smallest = ((x + z) / 2.0) - std::sqrt((half_difference * half_difference) + (y * y));
+    } else {
+        Eigen::SelfAdjointEigenSolver<Matrix> eigen{block.value, Eigen::EigenvaluesOnly};
+        if (eigen.info() != Eigen::Success) {
+            return false;
+        }
+        smallest = eigen.eigenvalues()(0);
+    }
+    return std::isfinite(smallest) && smallest >= -tolerance;
+}
+
 // Canonical (first <= second) terminal-pair blocks at their LU positions, read
 // through a per-call PhysicalBlocks cache. Each block is derived once and shared
 // by every quantity, both terminals, all branches at a bus and, when the cache is
 // shared, the injection helper. The reverse orientation is returned as the
 // adjoint, which SparseCovarianceWorkspace's physical_pair gives exactly.
+// Diagonal blocks must also pass positive_semidefinite, evaluated once per bus.
 template <class Workspace> class TerminalBlocks {
   public:
     using Block = typename Workspace::PhysicalBlock;
 
-    explicit TerminalBlocks(PhysicalBlocks<Workspace>& stored) : stored_{stored} {}
+    explicit TerminalBlocks(PhysicalBlocks<Workspace>& stored)
+        : stored_{stored}, semidefinite_(stored.workspace().augmented_matrix.size()) {}
 
     Block operator()(Idx first, Idx second) {
         if (first > second) {
@@ -98,11 +131,20 @@ template <class Workspace> class TerminalBlocks {
             missing.valid = false;
             return missing;
         }
-        return physical_pair(workspace, first, second, stored_.stored(*index, first, second));
+        auto block = physical_pair(workspace, first, second, stored_.stored(*index, first, second));
+        if (first == second) {
+            auto& semidefinite = semidefinite_[*index];
+            if (!semidefinite) {
+                semidefinite = positive_semidefinite(block);
+            }
+            block.valid = block.valid && *semidefinite;
+        }
+        return block;
     }
 
   private:
     PhysicalBlocks<Workspace>& stored_;
+    std::vector<std::optional<bool>> semidefinite_;
 };
 
 template <class Workspace> using TerminalCovariance = std::array<std::array<typename Workspace::PhysicalBlock, 2>, 2>;

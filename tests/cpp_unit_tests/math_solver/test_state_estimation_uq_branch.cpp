@@ -372,6 +372,40 @@ TEST_CASE("Branch UQ rejects inconsistent original pair orientations before cont
     CHECK(output.current_magnitude.phase[0].raw_status == UQVarianceStatus::invalid);
     CHECK(output.current_angle.phase[0].raw_status == UQVarianceStatus::invalid);
 }
+
+TEST_CASE("Branch UQ rejects a terminal block that is not positive semidefinite") {
+    using namespace state_estimation_uq;
+    auto topo = branch_topology();
+    MathModelParam<symmetric_t> params;
+    params.branch_param.resize(3, {1., 1., 1., 1.});
+    YBus<symmetric_t> const y_bus{topo, params};
+    std::vector<ILGain> gain(y_bus.nnz_lu());
+    for (auto d : y_bus.lu_diag()) {
+        gain[d](0, 0) = 1;
+        gain[d](1, 1) = -1;
+    }
+    SparseCovarianceWorkspace<ILGain, ILUnknown, 1> workspace{y_bus, gain, 1., {1., 1., 1.}, true};
+    // A negative bus-0 variance; bus 1's positive variance would mask it in each branch sum.
+    workspace.augmented_matrix[y_bus.lu_diag()[0]](0, 0) = -0.01;
+    StateEstimationUQRequest request;
+    request.branch = {{0, BranchSide::from, true, true, true, true}};
+    StateEstimationUQResult<symmetric_t> result;
+    PhysicalBlocks result_blocks{workspace};
+    branch_results(workspace, y_bus, request, result, result_blocks);
+    auto const& output = result.branch[0];
+    CHECK(output.active_power.phase[0].raw_status == UQVarianceStatus::invalid);
+    CHECK(output.reactive_power.phase[0].raw_status == UQVarianceStatus::invalid);
+    CHECK(output.current_magnitude.phase[0].raw_status == UQVarianceStatus::invalid);
+    CHECK(output.current_angle.phase[0].raw_status == UQVarianceStatus::invalid);
+
+    // NRSE 2x2 blocks: nonnegative diagonals can still fail through the off-diagonal entry.
+    CovarianceBlock<Eigen::Matrix2d> block;
+    block.value << 1.0, 1.0, 1.0, 1.0;
+    block.construction_scale = 2.0;
+    CHECK(branch_detail::positive_semidefinite(block));
+    block.value(0, 1) = block.value(1, 0) = 1.0 + 1e-9;
+    CHECK_FALSE(branch_detail::positive_semidefinite(block));
+}
 } // namespace power_grid_model::math_solver
 
 namespace power_grid_model::math_solver {
