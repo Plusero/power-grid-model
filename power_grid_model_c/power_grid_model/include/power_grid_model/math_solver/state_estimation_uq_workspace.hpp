@@ -38,20 +38,17 @@ inline constexpr std::size_t slack_reference = 4;
 inline constexpr std::size_t count = 5;
 } // namespace correction_term
 
-// Sparse covariance workspace for one island math model and one UQ evaluation.
+// Covariance workspace for one island and one UQ request.
 //
-// PGM formulates weighted least-squares state estimation as the bus-interleaved, variance-normalized
-// augmented KKT system
-//   Abar = Pi * [[Gbar, Q^H], [Q, -Rbar]] * Pi^T,   B = Abar^-1,
-// where Gbar contains normalized direct voltage weights, Q is the admittance or linearized flow/injection
-// Jacobian block, and Rbar contains normalized auxiliary measurement variances (zero for exact constraints).
-// Within each bus block, the leading StateDim coordinates `q` hold the voltage state (complex phasor U
-// for ILSE; real [theta, |U|] per phase for NRSE), and Z_ij = B_ij[q,q] is the raw state corner.
+// Notation used throughout this file:
+//   Abar   variance-normalized augmented WLS (KKT) matrix [[Gbar, Q^H], [Q, -Rbar]], bus-interleaved
+//   B      Abar^-1, with bus blocks B_ij
+//   q      state rows of a bus block: complex U (ILSE) or [theta, |U|] per phase (NRSE)
+//   Z_ij   B_ij[q,q], the raw state corner of B_ij
 //
-// The constructor validates/factorizes Abar, solves any nonlocal reference columns while LU factors are
-// in place, and runs the block Takahashi selective-inverse sweep so `augmented_matrix` holds B_ij on the
-// filled LU sparsity pattern. `calculate_state_covariance_block` then derives physical state covariance
-// blocks on demand without mutating the stored inverse blocks.
+// The constructor factorizes Abar (or reuses ILSE's factors) and overwrites `augmented_matrix` with the
+// blocks B_ij on the LU fill pattern (block Takahashi selective inverse). `calculate_state_covariance_block`
+// then returns corrected state covariance blocks without modifying B.
 template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2> class SparseCovarianceWorkspace {
   public:
     using Scalar = typename Gain::Scalar;
@@ -398,11 +395,9 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
         }
     }
 
-    // Fast sufficient condition for sigma_min(P) / sigma_max(P) >= 1e-12 on small (2x2 or 4x4) blocks.
-    // For any approximate inverse X with residual R = I - P * X and ||R||_2 < 1,
-    //   ||P^-1||_2 <= ||X||_2 / (1 - ||R||_2)  =>  sigma_min / sigma_max >= (1 - ||R||_F) / (||P||_F ||X||_F).
-    // Accounting for at most 16u * ||P||_F * ||X||_F rounding error in R and a 2x safety margin (2e-12),
-    // passing this check guarantees the SVD threshold; if it returns false, `validate_pivots` runs JacobiSVD.
+    // Skips JacobiSVD when the computed inverse X certifies sigma_min / sigma_max >= 1e-12 with a 2x margin:
+    //   r = ||I - P X||_F + 16u ||P||_F ||X||_F < 0.5  and  (1 - r) / (||P||_F ||X||_F) >= 2e-12.
+    // Proof: ||P^-1||_2 <= ||X||_2 / (1 - r) and ||.||_2 <= ||.||_F. `false` only means "not certified".
     static bool pivot_condition_certified(RawMatrix const& pivot) {
         // The 16u residual bound applies to 2x2 and 4x4 symmetric blocks; larger three-phase blocks
         // (6x6 and 12x12) proceed directly to JacobiSVD.
