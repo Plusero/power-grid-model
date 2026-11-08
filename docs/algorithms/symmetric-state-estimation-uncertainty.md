@@ -105,9 +105,7 @@ $\sqrt{\varepsilon_{\text{mach}}}$ times the state-corner Frobenius scale (twice
 the mean orientation norm for off-diagonal pairs). Accepted state
 corners sum the two orientations in a local copy, apply any shared
 virtual/reference corrections, and restore normalization and the one-half
-orientation factor.
-Construction scales sum the Frobenius norms of the normalized correction
-terms. Reverse access returns the adjoint. Stored augmented-inverse blocks
+orientation factor. Reverse access returns the adjoint. Stored augmented-inverse blocks
 remain unchanged.
 
 From the symmetrized state corner $Z_{ij} = \frac{1}{2}(B_{ij}[q,q] + B_{ji}[q,q]^H)$,
@@ -122,7 +120,9 @@ physical state covariance and voltage uncertainties are obtained as follows:
   angles are reported relative to the slack bus $s$ (phase $a$), the relative
   angle variance is $C_{\theta,ii} + C_{\theta,ss} - 2 C_{\theta,is}$, where the
   cross covariance $V_{is}$ is obtained from one augmented selector solve for the
-  slack column.
+  slack column. Because this sum could mask a negative single-term variance,
+  $\operatorname{Re}(V_{ii})$ and $\operatorname{Re}(V_{ss})$ must each be
+  nonnegative for the relative angle to be valid.
 - **NRSE:** When a deterministic virtual angle reference is present at bus $v$
   with normalized weight matrix $W_v = w I$, its fictitious measurement noise is
   removed by $C^0_{ij} = \alpha (Z_{ij} - T_i W_v T_j^T)$. When angles are
@@ -186,16 +186,11 @@ magnitudes retain their physical uncertainty.
 ## Validity and arithmetic
 
 All UQ calculations use standard IEEE-754 binary64 (`double`) arithmetic. Each
-diagonal state covariance block $C_{ii}$ must be finite, Hermitian within
-$\sqrt{\varepsilon_{\text{mach}}}$, and positive semidefinite within roundoff:
-
-```math
-\lambda_{\min}(C_{ii}) \ge -\texttt{round\_rtol} \cdot S_C,
-\qquad \texttt{round\_rtol} = 1000\,\varepsilon_{\text{mach}},
-```
-
-where the construction scale $S_C = \sum_k \|C_k\|_F$ sums the Frobenius norms of
-the block's normalized correction terms.
+state covariance block must be finite and Hermitian within
+$\sqrt{\varepsilon_{\text{mach}}}$. Voltage outputs read single diagonal
+entries, so the scalar rule below decides their validity; positive
+semidefiniteness of whole blocks is checked where later calculations combine
+their entries.
 
 Each scalar variance contraction records its signed `raw_variance` $v$, the sum
 of term magnitudes `absolute_scale` $s = \sum_k |t_k|$, and whether any term was
@@ -204,7 +199,8 @@ nonzero in exact arithmetic:
 - If a calculation is undefined (e.g., nominal voltage is zero so magnitude and
   angle derivatives are undefined, or the source covariance block is invalid),
   nonfinite, lost all nonzero terms to subnormal underflow, or falls below
-  $-\texttt{round\_rtol} \cdot s$, it is reported as `invalid` with `sigma = NaN`.
+  $-\texttt{round\_rtol} \cdot s$ with $\texttt{round\_rtol} = 1000\,\varepsilon_{\text{mach}}$,
+  it is reported as `invalid` with `sigma = NaN`.
 - If $-\texttt{round\_rtol} \cdot s \le v < 0$, negative roundoff is clipped to
   `sigma = 0.0` with status `clipped_roundoff` while preserving the signed
   `raw_variance`.

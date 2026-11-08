@@ -14,7 +14,6 @@
 #include "../common/common.hpp"
 #include "../common/three_phase_tensor.hpp"
 
-#include <Eigen/Eigenvalues>
 #include <Eigen/SVD>
 
 #include <algorithm>
@@ -38,23 +37,6 @@ inline constexpr std::size_t col_reference = 3;
 inline constexpr std::size_t slack_reference = 4;
 inline constexpr std::size_t count = 5;
 } // namespace correction_term
-
-// Accumulates the construction scale S_C = sum_k ||C_k||_F across the covariance correction terms.
-class CorrectionNorms {
-  public:
-    void add(std::size_t k, double x) { norms_[k].add(x); }
-    void add(std::size_t k, DoubleComplex x) { norms_[k].add(x); }
-    double sum() const {
-        double result = 0.0;
-        for (auto const& norm : norms_) {
-            result += norm.value();
-        }
-        return result;
-    }
-
-  private:
-    std::array<FrobeniusNorm, correction_term::count> norms_{};
-};
 
 // Sparse covariance workspace for one island math model and one UQ evaluation.
 //
@@ -88,14 +70,12 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
     using RealStateMatrix = Eigen::Matrix<double, StateDim, StateDim>;
     // Corrected state covariance block C_ij together with roundoff scales over its correction terms C_k:
     // - term_scale(r,c) = sum_k |C_k(r,c)| (entrywise roundoff scale for diagonal variances),
-    // - construction_scale = sum_k ||C_k||_F (block scale for the marginal eigenvalue check),
     // - has_nonzero_term(r,c) tracks whether any correction term was nonzero before rounding,
-    // - valid is false if finiteness, Hermitian symmetry, or marginal positive-semidefiniteness fails.
+    // - valid is false if finiteness or Hermitian symmetry fails.
     struct StateCovarianceBlock {
         StateMatrix value = StateMatrix::Zero();
         RealStateMatrix term_scale = RealStateMatrix::Zero();
         Eigen::Matrix<bool, StateDim, StateDim> has_nonzero_term = Eigen::Matrix<bool, StateDim, StateDim>::Zero();
-        double construction_scale = 0.0;
         bool valid = true;
     };
     using Solver = SparseLUSolver<Gain, Unknown, Unknown>;
@@ -126,7 +106,7 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
         assert(uses_complex_state || report_relative_angle == (virtual_angle_bus_ >= 0));
 
         // 1-2. Reuse ILSE's LU factors, or validate, symmetrize, and factorize NRSE's returned-state gain.
-        // Perturbed ILSE factors are rejected by the selective inverse in step 5.
+        // Perturbed ILSE factors end in SparseMatrixError, at the latest in the selective inverse (step 5).
         Solver owned_solver{row_indptr_, col_indices_, lu_diag_};
         Solver& solver = factorization ? factorization->solver : owned_solver;
         typename Solver::BlockPermArray owned_perm;
@@ -180,7 +160,7 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
 
     // Compute the corrected state covariance block C_ij for bus pair (row, col), with C_ji = C_ij^H.
     // Checks Hermitian symmetry of the raw state corner Z_ij = (B_ij[q,q] + B_ji[q,q]^H) / 2,
-    // applies reference corrections and variance normalization alpha, and checks marginal PSD on diagonals.
+    // and applies reference corrections and variance normalization alpha.
     StateCovarianceBlock calculate_state_covariance_block(Idx row, Idx col) const {
         if (row > col) {
             auto result = calculate_state_covariance_block(col, row);
@@ -221,11 +201,7 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
             invalid.valid = false;
             return invalid;
         }
-        auto result = correct_covariance(row, col, source);
-        if (row == col) {
-            result.valid = result.valid && valid_marginal(result);
-        }
-        return result;
+        return correct_covariance(row, col, source);
     }
 
     DoubleComplex phase_voltage(Idx bus, int phase) const {
@@ -244,8 +220,6 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
     std::vector<StateColumn> slack_column; // per bus i: state rows of B's column for slack phase a
 
   private:
-    using CorrectionTerms = std::array<StateMatrix, correction_term::count>;
-
     // ----- Covariance correction -----
 
     Idx block_index(Idx row, Idx col) const {
@@ -263,7 +237,6 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
     //         Cr_ij = C0_ij - r_i * d^T - d * r_j^T + c * d * d^T.
     StateCovarianceBlock correct_covariance(Idx row, Idx col, StateMatrix const& source) const {
         StateCovarianceBlock result;
-        CorrectionNorms norms;
         if constexpr (uses_complex_state) {
             double const alpha = variance_normalization;
             for (int r = 0; r != StateDim; ++r) {
@@ -271,26 +244,20 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
                     DoubleComplex const term = alpha * source(r, c) * 0.5;
                     result.value(r, c) = term;
                     result.term_scale(r, c) = modulus(term);
-                    norms.add(correction_term::normalized_source, term);
                 }
             }
         } else {
-            // Store the upper-triangle correction terms C_k so mirrored lower-triangle entries on
-            // diagonal blocks can include their norms in `construction_scale`.
-            CorrectionTerms terms;
-            terms.fill(StateMatrix::Zero());
             for (int r = 0; r != StateDim; ++r) {
                 for (int c = 0; c != StateDim; ++c) {
                     if (row == col && r > c) {
-                        mirror_entry(result, terms, norms, r, c);
+                        mirror_entry(result, r, c);
                     } else if (!slack_angle_projected(row, col, r, c)) {
-                        correct_entry(result, terms, norms, row, col, r, c, source(r, c));
+                        correct_entry(result, row, col, r, c, source(r, c));
                     }
                 }
             }
         }
-        result.construction_scale = norms.sum();
-        result.valid = result.value.allFinite() && std::isfinite(result.construction_scale);
+        result.valid = result.value.allFinite();
         return result;
     }
 
@@ -300,8 +267,7 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
     // For relative angles, d selects the angle coordinates [0, phase_count), r_i = alpha * rho_i
     // is the bus-to-slack-phase-a cross-covariance vector, and c = alpha * rho_s[0] is the slack
     // phase-a angle variance in C0.
-    void correct_entry(StateCovarianceBlock& result, CorrectionTerms& terms, CorrectionNorms& norms, Idx row, Idx col,
-                       int r, int c, double source) const {
+    void correct_entry(StateCovarianceBlock& result, Idx row, Idx col, int r, int c, double source) const {
         double const alpha = variance_normalization;
         RealSum sum;
         std::array<double, correction_term::count> doubled_terms{};
@@ -329,25 +295,18 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
         }
         result.value(r, c) = alpha * sum.value() * 0.5;
         double term_scale = 0.0;
-        for (std::size_t k = 0; k != correction_term::count; ++k) {
-            double const term = alpha * doubled_terms[k] * 0.5;
-            terms[k](r, c) = term;
-            term_scale += std::abs(term);
-            norms.add(k, term);
+        for (double const doubled_term : doubled_terms) {
+            term_scale += std::abs(alpha * doubled_term * 0.5);
         }
         result.term_scale(r, c) = term_scale;
         result.has_nonzero_term(r, c) = sum.has_nonzero_term();
     }
 
     // Mirror upper-triangle entry (c, r) to lower-triangle entry (r, c) on a symmetric NRSE diagonal block.
-    static void mirror_entry(StateCovarianceBlock& result, CorrectionTerms const& terms, CorrectionNorms& norms, int r,
-                             int c) {
+    static void mirror_entry(StateCovarianceBlock& result, int r, int c) {
         result.value(r, c) = result.value(c, r);
         result.term_scale(r, c) = result.term_scale(c, r);
         result.has_nonzero_term(r, c) = result.has_nonzero_term(c, r);
-        for (std::size_t k = 0; k != correction_term::count; ++k) {
-            norms.add(k, terms[k](c, r));
-        }
     }
 
     // True when (row, r) or (col, c) is the slack phase-a angle in relative NRSE (identically zero).
@@ -358,32 +317,6 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
 
     // Unnormalized bus-to-slack-phase-a cross covariance rho_i[k] = (C0_{i,s} e_0)[k] / alpha.
     double reference_cross(Idx bus, int coordinate) const { return reference_crosses_[bus][coordinate]; }
-
-    // Check marginal positive-semidefiniteness of a Hermitian diagonal block:
-    // require lambda_min(C_ii) >= -round_rtol * construction_scale.
-    static bool valid_marginal(StateCovarianceBlock const& block) {
-        double const tolerance = round_rtol * block.construction_scale;
-        double smallest{};
-        if constexpr (StateDim == 1) {
-            smallest = block.value(0, 0).real();
-        } else if constexpr (StateDim == 2) {
-            smallest = smallest_eigenvalue_2x2(block.value(0, 0), block.value(1, 0), block.value(1, 1));
-        } else {
-            Eigen::SelfAdjointEigenSolver<StateMatrix> eigen_solver{block.value, Eigen::EigenvaluesOnly};
-            if (eigen_solver.info() != Eigen::Success) {
-                return false;
-            }
-            smallest = eigen_solver.eigenvalues()(0);
-        }
-        return std::isfinite(smallest) && smallest >= -tolerance;
-    }
-
-    // Closed-form smallest eigenvalue of a finite real symmetric 2x2 matrix [[a, b], [b, d]].
-    static double smallest_eigenvalue_2x2(double a, double b, double d) {
-        double const half_difference = (a - d) / 2.0;
-        double const radius = std::sqrt((half_difference * half_difference) + (b * b));
-        return ((a + d) / 2.0) - radius;
-    }
 
     // ----- Workspace construction helpers (in constructor execution order) -----
 
@@ -449,7 +382,7 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
             for (int i = 0; i != pivot.cols(); ++i) {
                 equilibrate(pivot.col(i));
             }
-            // A nonfinite entry or a zero row/column leaves a NaN here (x/inf, 0/0); JacobiSVD must not see it.
+            // An inf (inf/inf) or NaN entry, or a zero row/column (0/0), leaves a NaN; JacobiSVD must not see it.
             if (!pivot.allFinite()) {
                 throw SparseMatrixError{};
             }
@@ -550,7 +483,8 @@ template <class Workspace> SlackAngle slack_angle(Workspace const& workspace) {
     DoubleComplex const voltage = workspace.phase_voltage(workspace.slack_bus, 0);
     SlackAngle result;
     bool const nonzero = is_finite(voltage) && voltage != DoubleComplex{};
-    result.defined = slack_covariance.valid && nonzero;
+    // C_{theta,ss} is a single-term variance: reject a negative one here, since a relative sum could mask it.
+    result.defined = slack_covariance.valid && nonzero && slack_covariance.value(0, 0).real() >= 0.0;
     if (nonzero) {
         result.inverse_voltage = reciprocal(voltage);
         result.variance_term = half_square(slack_covariance.value(0, 0).real(), result.inverse_voltage);
@@ -577,7 +511,8 @@ UQPhaseValue ilse_angle_variance(Workspace const& workspace, std::optional<Slack
         sum.add(real_part_of_product(-workspace.variance_normalization, workspace.slack_column[bus](phase),
                                      inverse_voltage, std::conj(slack->inverse_voltage)));
     }
-    return finalize_variance(sum, defined && slack->defined);
+    // As for C_{theta,ss}, a negative single-term C_{theta,ii} must not be masked by the relative sum.
+    return finalize_variance(sum, defined && slack->defined && variance_ii >= 0.0);
 }
 
 // Extract an NRSE polar coordinate variance C_ii(coordinate, coordinate) with its roundoff scale.

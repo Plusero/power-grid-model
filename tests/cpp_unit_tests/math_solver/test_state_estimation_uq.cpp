@@ -342,6 +342,27 @@ TEST_CASE("UQ variance status thresholds and validity") {
     CHECK(variance({std::numeric_limits<double>::infinity()}).raw_status == UQVarianceStatus::invalid);
 }
 
+TEST_CASE("UQ relative ILSE angles reject a negative single-term variance inside the relative sum") {
+    // Three buses in a line, slack bus 2; the diagonal gain makes every V_ii = 1 and V_is = 0.
+    auto const topo = topology(3, {{0, 1}, {1, 2}});
+    YBus<symmetric_t> const y_bus{topo, parameters(2)};
+    std::vector<ILGain> gain(y_bus.nnz_lu());
+    for (auto const d : y_bus.lu_diag()) {
+        gain[d](0, 0) = 1.0;
+        gain[d](1, 1) = -1.0;
+    }
+    StateEstimationUQRequest request;
+    request.voltage = {{0, false, true}};
+    for (Idx const negative_bus : {Idx{2}, Idx{0}}) {
+        SparseCovarianceWorkspace<ILGain, ILUnknown, 1> workspace{y_bus, gain, 1.0, {1.0, 1.0, 1.0}, false};
+        REQUIRE(workspace.report_relative_angle);
+        // A small negative V_ss (slack) or V_00 would be masked by the other positive term.
+        workspace.augmented_matrix[y_bus.lu_diag()[negative_bus]](0, 0) = -1e-8;
+        auto const result = calculate_voltage_uq_results(workspace, request);
+        CHECK(result.voltage[0].angle.phase[0].raw_status == UQVarianceStatus::invalid);
+    }
+}
+
 TEST_CASE_TEMPLATE("UQ voltage integration and estimate invariance", Solver, IterativeLinearSESolver<symmetric_t>,
                    NewtonRaphsonSESolver<symmetric_t>) {
     constexpr double variance_scale = 1e-4;
