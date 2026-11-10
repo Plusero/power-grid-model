@@ -10,6 +10,7 @@
 
 #include <doctest/doctest.h>
 
+#include <array>
 #include <complex>
 #include <vector>
 
@@ -87,6 +88,40 @@ MeasuredBuses measured_buses(bool absolute, double voltage_variance) {
         }
     }
     return result;
+}
+
+// Compare the NRSE branch outputs with the measurement-sensitivity reference.
+template <class Solver>
+void check_branch_against_sensitivities(Solver& solver, YBus<Asym> const& y_bus, MeasuredBuses const& measured,
+                                        bool absolute) {
+    StateEstimationUQRequest request;
+    request.branch = {{0, BranchSide::from, true, true, true, true}, {0, BranchSide::to, true, true, true, true}};
+    auto const result = run_with_uq(solver, y_bus, measured.input, request, 1e-10, 100).uq;
+    auto const reference = branch_sensitivity_variance(solver, y_bus, measured.input, measured.scalars);
+    for (int side = 0; side != 2; ++side) {
+        CAPTURE(side);
+        for (int phase = 0; phase != 3; ++phase) {
+            CAPTURE(phase);
+            auto const& branch = result.branch[side];
+            std::array<UQPhaseValue, n_branch_output> const values{
+                branch.active_power.phase[phase], branch.reactive_power.phase[phase],
+                branch.current_magnitude.phase[phase], branch.current_angle.phase[phase]};
+            for (int quantity = 0; quantity != n_branch_output; ++quantity) {
+                CAPTURE(quantity);
+                double const expected = reference[quantity](side, phase);
+                CHECK(values[quantity].raw_status == UQVarianceStatus::valid);
+                if (absolute || quantity != current_angle_output) {
+                    CHECK(values[quantity].raw_variance == RelativeTo{expected, 1e-5});
+                } else {
+                    // The reported current angle is relative to the slack phase-a angle, so it carries the same
+                    // known limitation as the voltage angles. On this network it exceeds the first-order
+                    // variance by up to 15%.
+                    CHECK(values[quantity].raw_variance >= expected * (1.0 - 1e-5));
+                    CHECK(values[quantity].raw_variance <= expected * 1.15);
+                }
+            }
+        }
+    }
 }
 
 // Compare the NRSE voltage variances with the measurement-sensitivity reference.
@@ -167,6 +202,7 @@ TEST_CASE_TEMPLATE("UQ three-phase voltage variances through the estimators", So
             CHECK(result.voltage[1].angle.phase[2].sigma > 0.0);
         }
         if constexpr (Solver::is_NRSE_solver) {
+            check_branch_against_sensitivities(solver, y_bus, measured, absolute);
             auto const reference = sensitivity_variance(solver, y_bus, measured.input, measured.scalars);
             check_against_sensitivities(result, reference, absolute, topo.slack_bus, voltage_variance);
         }

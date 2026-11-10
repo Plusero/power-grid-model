@@ -7,6 +7,7 @@
 // Request, result, and context types for state-estimation uncertainty quantification (UQ), and variance status rule.
 
 #include "../common/common.hpp"
+#include "../common/enum.hpp"
 #include "../common/exception.hpp"
 
 #include <algorithm>
@@ -17,15 +18,24 @@
 
 namespace power_grid_model::math_solver {
 
-// Uncertainty requests use bus indices local to a single solved island's math model.
+// Uncertainty requests use bus and branch indices local to a single solved island's math model.
 struct VoltageUQRequest {
     Idx bus;
     bool magnitude;
     bool angle;
 };
+struct BranchUQRequest {
+    Idx branch;
+    BranchSide side;
+    bool active_power;
+    bool reactive_power;
+    bool current_magnitude;
+    bool current_angle;
+};
 struct StateEstimationUQRequest {
     std::vector<VoltageUQRequest> voltage;
-    bool empty() const { return voltage.empty(); }
+    std::vector<BranchUQRequest> branch;
+    bool empty() const { return voltage.empty() && branch.empty(); }
 };
 
 // Classification of a scalar variance computation:
@@ -34,14 +44,15 @@ struct StateEstimationUQRequest {
 // - clipped_roundoff: small negative variance within [-round_rtol * absolute_scale, 0) caused by
 //                     floating-point cancellation. Clipped to sigma = 0 while preserving raw_variance. Mainly for angle
 //                     variances.
-// - invalid:          failed factorization, nonfinite variance, or negative variance beyond roundoff
-//                     tolerance (sigma remains NaN).
+// - invalid:          undefined quantity, failed factorization, nonfinite variance, or negative variance
+//                     beyond roundoff tolerance (sigma remains NaN).
 enum class UQVarianceStatus : IntS { not_requested, valid, clipped_roundoff, invalid };
 
 // Per-phase uncertainty output and diagnostic values.
 // Units match the math solver's internal per-unit / radian convention:
 // - Voltage magnitude: raw_variance and absolute_scale in p.u.^2, sigma in p.u.
 // - Voltage angle:     raw_variance and absolute_scale in rad^2, sigma in rad.
+// - Branch power and current magnitude in p.u., branch current angle in rad, at the requested side.
 // Angle uncertainty is expressed in the same reference frame as the state-estimation (SE) output:
 // - Absolute frame when the island has at least one prepared voltage-angle measurement.
 // - Otherwise relative to the phase-a angle of the slack bus. That angle itself has zero variance;
@@ -58,11 +69,15 @@ template <symmetry_tag sym> struct UQValue {
 template <symmetry_tag sym> struct VoltageUQResult {
     UQValue<sym> magnitude, angle;
 };
+template <symmetry_tag sym> struct BranchUQResult {
+    UQValue<sym> active_power, reactive_power, current_magnitude, current_angle;
+};
 
 // UQ results for one island.
-// voltage[k] answers request row voltage[k].
+// voltage[k] and branch[k] answer the request rows voltage[k] and branch[k].
 template <symmetry_tag sym> struct StateEstimationUQResult {
     std::vector<VoltageUQResult<sym>> voltage;
+    std::vector<BranchUQResult<sym>> branch;
 };
 
 // References to the caller's request and result for one island, passed through run_state_estimation().
@@ -73,14 +88,20 @@ template <symmetry_tag sym> struct StateEstimationUQContext {
 };
 
 namespace state_estimation_uq {
-// Reject out-of-range bus indices before state estimation starts.
-template <symmetry_tag sym> void validate_context(StateEstimationUQContext<sym>* uq, Idx n_bus) {
+// Reject out-of-range bus and branch indices and unknown branch sides before state estimation starts.
+template <symmetry_tag sym> void validate_context(StateEstimationUQContext<sym>* uq, Idx n_bus, Idx n_branch) {
     if (!uq) {
         return;
     }
     for (auto const& item : uq->request.voltage) {
         if (item.bus < 0 || item.bus >= n_bus) {
             throw InvalidArguments{"Invalid voltage uncertainty request"};
+        }
+    }
+    for (auto const& item : uq->request.branch) {
+        if (item.branch < 0 || item.branch >= n_branch ||
+            (item.side != BranchSide::from && item.side != BranchSide::to)) {
+            throw InvalidArguments{"Invalid branch uncertainty request"};
         }
     }
 }
@@ -104,22 +125,23 @@ class RealSum {
     double absolute_scale_ = 0.0;
 };
 
-// Classify a variance as described at UQVarianceStatus. The variance and its scale are stored for every status.
-inline UQPhaseValue finalize_variance(double variance, double absolute_scale) {
+// Classify a variance as described at UQVarianceStatus. `defined` is false when the quantity does not exist,
+// such as an angle at a zero voltage or current. The variance and its scale are stored for every status.
+inline UQPhaseValue finalize_variance(double variance, double absolute_scale, bool defined) {
     UQPhaseValue result;
     result.raw_variance = variance;
     result.absolute_scale = absolute_scale;
     result.raw_status = UQVarianceStatus::invalid;
     double const tolerance = round_rtol * absolute_scale;
-    if (!std::isfinite(variance) || !std::isfinite(absolute_scale) || variance < -tolerance) {
+    if (!defined || !std::isfinite(variance) || !std::isfinite(absolute_scale) || variance < -tolerance) {
         return result;
     }
     result.raw_status = variance < 0.0 ? UQVarianceStatus::clipped_roundoff : UQVarianceStatus::valid;
     result.sigma = std::sqrt(std::max(0.0, variance));
     return result;
 }
-inline UQPhaseValue finalize_variance(RealSum const& sum) {
-    return finalize_variance(sum.value(), sum.absolute_scale());
+inline UQPhaseValue finalize_variance(RealSum const& sum, bool defined) {
+    return finalize_variance(sum.value(), sum.absolute_scale(), defined);
 }
 } // namespace state_estimation_uq
 } // namespace power_grid_model::math_solver

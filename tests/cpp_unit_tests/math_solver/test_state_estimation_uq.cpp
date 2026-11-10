@@ -11,6 +11,7 @@
 
 #include <doctest/doctest.h>
 
+#include <array>
 #include <cmath>
 #include <initializer_list>
 #include <limits>
@@ -160,16 +161,16 @@ TEST_CASE("UQ variance status thresholds") {
     // The bound is inclusive: a negative variance exactly at the tolerance is roundoff, the next number below
     // it is not.
     double const tolerance = round_rtol;
-    CHECK(finalize_variance(-tolerance, 1.0).raw_status == UQVarianceStatus::clipped_roundoff);
-    CHECK(finalize_variance(std::nextafter(-tolerance, -1.0), 1.0).raw_status == UQVarianceStatus::invalid);
+    CHECK(finalize_variance(-tolerance, 1.0, true).raw_status == UQVarianceStatus::clipped_roundoff);
+    CHECK(finalize_variance(std::nextafter(-tolerance, -1.0), 1.0, true).raw_status == UQVarianceStatus::invalid);
 
     // The classified sum of `terms`, accumulated as the production code does.
-    auto const variance = [](std::initializer_list<double> terms) {
+    auto const variance = [](std::initializer_list<double> terms, bool defined = true) {
         RealSum sum;
         for (double const term : terms) {
             sum.add(term);
         }
-        return finalize_variance(sum);
+        return finalize_variance(sum, defined);
     };
     // A small negative remainder of a cancellation is clipped to zero, and its signed value is kept.
     auto const clipped = variance({1.0, -1.0 - 1e-14});
@@ -188,11 +189,49 @@ TEST_CASE("UQ variance status thresholds") {
     auto const cancelled = variance({0x1p53, 1.0, -0x1p53});
     CHECK(cancelled.raw_variance == 0.0);
     CHECK(cancelled.raw_status == UQVarianceStatus::valid);
+    // A quantity that does not exist at the operating point, such as an angle at zero voltage.
+    auto const undefined = variance({1.0}, false);
+    CHECK(undefined.raw_status == UQVarianceStatus::invalid);
+    CHECK(std::isnan(undefined.sigma));
     // Nonfinite variances.
     auto const not_a_number = variance({nan});
     CHECK(not_a_number.raw_status == UQVarianceStatus::invalid);
     CHECK(std::isnan(not_a_number.sigma));
     CHECK(variance({std::numeric_limits<double>::infinity()}).raw_status == UQVarianceStatus::invalid);
+}
+
+namespace {
+template <class Gain, class Unknown, int N> void zero_voltage_outputs() {
+    using Workspace = SparseCovarianceWorkspace<Gain, Unknown, N>;
+    // Three buses in a line with an identity state gain: every state variance is 1 and buses are independent.
+    auto const topo = topology(3, {{0, 1}, {1, 2}}, 2);
+    YBus<symmetric_t> const y_bus{topo, parameters<symmetric_t>(2)};
+    std::vector<Gain> gain(y_bus.nnz_lu());
+    for (auto const diagonal : y_bus.lu_diag()) {
+        for (int i = 0; i != 2 * N; ++i) {
+            gain[diagonal](i, i) = i < N ? 1.0 : -1.0;
+        }
+    }
+    Workspace const workspace{y_bus, gain, 1.0, {1.0, 0.0, 1.0}, true};
+    StateEstimationUQRequest request;
+    request.voltage = {{0, true, true}, {1, true, true}};
+    auto const result = calculate_voltage_uq_results(workspace, request);
+    // ILSE splits a complex variance evenly between magnitude and angle; NRSE reads polar coordinates.
+    double const expected = Workspace::uses_complex_state ? 0.5 : 1.0;
+    CHECK(result.voltage[0].magnitude.phase[0].raw_status == UQVarianceStatus::valid);
+    CHECK(result.voltage[0].magnitude.phase[0].raw_variance == RelativeTo{expected, 1e-12});
+    CHECK(result.voltage[0].angle.phase[0].raw_status == UQVarianceStatus::valid);
+    CHECK(result.voltage[0].angle.phase[0].raw_variance == RelativeTo{expected, 1e-12});
+    CHECK(result.voltage[1].magnitude.phase[0].raw_status == UQVarianceStatus::invalid);
+    CHECK(std::isnan(result.voltage[1].magnitude.phase[0].sigma));
+    CHECK(result.voltage[1].angle.phase[0].raw_status == UQVarianceStatus::invalid);
+    CHECK(std::isnan(result.voltage[1].angle.phase[0].sigma));
+}
+} // namespace
+
+TEST_CASE("UQ voltage outputs are invalid at a zero voltage") {
+    SUBCASE("ILSE") { zero_voltage_outputs<ILGain, ILUnknown, 1>(); }
+    SUBCASE("NRSE") { zero_voltage_outputs<NRGain, NRUnknown, 2>(); }
 }
 
 TEST_CASE_TEMPLATE("UQ on a two-bus network with an exact zero injection", Solver, IterativeLinearSESolver<symmetric_t>,
@@ -258,6 +297,25 @@ TEST_CASE_TEMPLATE("UQ on a two-bus network with an exact zero injection", Solve
         CHECK(result.voltage[3].angle.phase[0].raw_status == UQVarianceStatus::not_requested);
     }
 
+    SUBCASE("Branch rows leave the voltage rows unchanged") {
+        // Adding branch rows shares the covariance workspace.
+        StateEstimationUQRequest request;
+        request.voltage = {{0, true, true}, {1, false, true}};
+        auto branch_request = request;
+        branch_request.branch = {{0, BranchSide::from, true, true, true, true},
+                                 {0, BranchSide::to, true, true, true, true}};
+        for (bool const absolute : {false, true}) {
+            CAPTURE(absolute);
+            auto const voltage_only = run(absolute, request);
+            auto const with_branch = run(absolute, branch_request);
+            REQUIRE(with_branch.branch.size() == 2);
+            CHECK(with_branch.voltage[0].magnitude.phase[0].raw_variance ==
+                  voltage_only.voltage[0].magnitude.phase[0].raw_variance);
+            CHECK(with_branch.voltage[0].angle.phase[0].raw_variance ==
+                  voltage_only.voltage[0].angle.phase[0].raw_variance);
+        }
+    }
+
     SUBCASE("An empty request does no work") {
         // The result that the caller supplied stays empty.
         CHECK(run(true, StateEstimationUQRequest{}).voltage.empty());
@@ -287,6 +345,7 @@ TEST_CASE_TEMPLATE("UQ voltage variances against the estimator's measurement sen
         Solver solver{y_bus, topo};
         StateEstimationUQRequest request;
         request.voltage = {{0, true, true}, {1, true, true}};
+        request.branch = {{0, BranchSide::from, true, true, true, true}, {0, BranchSide::to, true, true, true, true}};
         auto const [estimate, result] = run_with_uq(solver, y_bus, measured.input, request, 1e-12, 500);
         // The measurements agree with one state, which the estimator therefore returns.
         auto const u = measured_branch_bus_voltages();
@@ -296,6 +355,25 @@ TEST_CASE_TEMPLATE("UQ voltage variances against the estimator's measurement sen
         }
         auto const reference = uq_test::sensitivity_variance(solver, y_bus, measured.input, measured.scalars);
         REQUIRE(result.voltage.size() == 2);
+        REQUIRE(result.branch.size() == 2);
+        auto const branch_reference =
+            uq_test::branch_sensitivity_variance(solver, y_bus, measured.input, measured.scalars);
+        for (int side = 0; side != 2; ++side) {
+            CAPTURE(side);
+            auto const& branch = result.branch[side];
+            std::array<UQPhaseValue, n_branch_output> const values{
+                branch.active_power.phase[0], branch.reactive_power.phase[0], branch.current_magnitude.phase[0],
+                branch.current_angle.phase[0]};
+            for (int quantity = 0; quantity != n_branch_output; ++quantity) {
+                CAPTURE(quantity);
+                CHECK(values[quantity].raw_status == UQVarianceStatus::valid);
+                // ILSE is not compared: its proper complex model does not reproduce the first-order variance
+                // (see the voltage limitation below); the dense reference covers its branch formulas.
+                if constexpr (Solver::is_NRSE_solver) {
+                    CHECK(values[quantity].raw_variance == RelativeTo{branch_reference[quantity](side, 0), 1e-5});
+                }
+            }
+        }
         for (Idx bus = 0; bus != 2; ++bus) {
             CAPTURE(bus);
             auto const& magnitude = result.voltage[bus].magnitude.phase[0];
@@ -332,30 +410,47 @@ TEST_CASE_TEMPLATE("UQ voltage variances against the estimator's measurement sen
 
 TEST_CASE("UQ request bounds") {
     constexpr Idx n_bus = 2;
+    constexpr Idx n_branch = 1;
     StateEstimationUQRequest request;
     StateEstimationUQResult<symmetric_t> result;
     StateEstimationUQContext<symmetric_t> context{request, result};
     // No context and an empty request are accepted.
-    CHECK_NOTHROW(validate_context<symmetric_t>(nullptr, n_bus));
-    CHECK_NOTHROW(validate_context(&context, n_bus));
+    CHECK_NOTHROW(validate_context<symmetric_t>(nullptr, n_bus, n_branch));
+    CHECK_NOTHROW(validate_context(&context, n_bus, n_branch));
     // A bus index below zero or at the bus count is rejected, also when another row is valid.
     for (Idx const bus : {Idx{-1}, n_bus}) {
         request.voltage = {{0, true, true}, {bus, true, false}};
-        CHECK_THROWS_AS(validate_context(&context, n_bus), InvalidArguments);
+        CHECK_THROWS_AS(validate_context(&context, n_bus, n_branch), InvalidArguments);
     }
     // Bus indices in range are accepted, also in a row that selects nothing.
     request.voltage = {{0, true, true}, {1, false, false}};
-    CHECK_NOTHROW(validate_context(&context, n_bus));
+    CHECK_NOTHROW(validate_context(&context, n_bus, n_branch));
+    // A branch index below zero or at the branch count, and an unknown branch side, are rejected.
+    request = {};
+    for (Idx const branch : {Idx{-1}, n_branch}) {
+        request.branch = {{branch, BranchSide::from, true, false, false, false}};
+        CHECK_THROWS_AS(validate_context(&context, n_bus, n_branch), InvalidArguments);
+    }
+    request.branch = {{0, static_cast<BranchSide>(2), true, false, false, false}};
+    CHECK_THROWS_AS(validate_context(&context, n_bus, n_branch), InvalidArguments);
+    request.branch = {{0, BranchSide::to, true, false, false, false}};
+    CHECK_NOTHROW(validate_context(&context, n_bus, n_branch));
 
     // The solver rejects an invalid request before it estimates, and the supplied result stays untouched.
     auto const topo = voltage_measurement_topology();
     YBus<symmetric_t> const y_bus{topo, parameters<symmetric_t>(1)};
     NewtonRaphsonSESolver<symmetric_t> solver{y_bus, topo};
     common::logging::NoLogger log;
+    request = {};
     request.voltage = {{n_bus, true, true}};
     CHECK_THROWS_AS(solver.run_state_estimation(y_bus, voltage_measurement_input(true, 1e-4), 1e-12, 30, log, &context),
                     InvalidArguments);
     CHECK(result.voltage.empty());
+    request = {};
+    request.branch = {{n_branch, BranchSide::from, true, false, false, false}};
+    CHECK_THROWS_AS(solver.run_state_estimation(y_bus, voltage_measurement_input(true, 1e-4), 1e-12, 30, log, &context),
+                    InvalidArguments);
+    CHECK(result.branch.empty());
 }
 
 TEST_CASE_TEMPLATE("UQ factorization failure keeps the estimate and reports requested uncertainty invalid", Solver,
@@ -376,9 +471,11 @@ TEST_CASE_TEMPLATE("UQ factorization failure keeps the estimate and reports requ
         auto const ordinary = solver.run_state_estimation(y_bus, input, 1e-12, 30, log);
         StateEstimationUQRequest request;
         request.voltage = {{0, true, true}, {1, false, false}};
+        request.branch = {{0, BranchSide::to, true, false, true, false}};
         auto const [enabled, result] = run_with_uq(solver, y_bus, input, request, 1e-12, 30);
         CHECK(enabled.u == ordinary.u);
         REQUIRE(result.voltage.size() == 2);
+        REQUIRE(result.branch.size() == 1);
         for (auto const* value : {&result.voltage[0].magnitude.phase[0], &result.voltage[0].angle.phase[0]}) {
             CHECK(value->raw_status == UQVarianceStatus::invalid);
             CHECK(std::isnan(value->sigma));
@@ -386,6 +483,14 @@ TEST_CASE_TEMPLATE("UQ factorization failure keeps the estimate and reports requ
         }
         CHECK(result.voltage[1].magnitude.phase[0].raw_status == UQVarianceStatus::not_requested);
         CHECK(result.voltage[1].angle.phase[0].raw_status == UQVarianceStatus::not_requested);
+        auto const& branch = result.branch[0];
+        for (auto const* value : {&branch.active_power.phase[0], &branch.current_magnitude.phase[0]}) {
+            CHECK(value->raw_status == UQVarianceStatus::invalid);
+            CHECK(std::isnan(value->sigma));
+            CHECK(std::isnan(value->raw_variance));
+        }
+        CHECK(branch.reactive_power.phase[0].raw_status == UQVarianceStatus::not_requested);
+        CHECK(branch.current_angle.phase[0].raw_status == UQVarianceStatus::not_requested);
     }
 }
 

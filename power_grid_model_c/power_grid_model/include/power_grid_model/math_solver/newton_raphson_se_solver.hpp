@@ -12,7 +12,7 @@
 #include "observability.hpp"
 #include "sparse_lu_solver.hpp"
 #include "state_estimation_uq.hpp"
-#include "state_estimation_uq_voltage.hpp"
+#include "state_estimation_uq_entry_point.hpp"
 #include "state_estimation_uq_workspace.hpp"
 #include "y_bus.hpp"
 
@@ -171,7 +171,7 @@ template <symmetry_tag sym_type> class NewtonRaphsonSESolver {
     SolverOutput<sym> run_state_estimation(YBus<sym> const& y_bus, StateEstimationInput<sym> const& input,
                                            double err_tol, Idx max_iter, Logger& log,
                                            StateEstimationUQContext<sym>* uq = nullptr) {
-        state_estimation_uq::validate_context(uq, n_bus_);
+        state_estimation_uq::validate_context(uq, n_bus_, y_bus.math_topology().n_branch());
         // prepare
         Timer main_timer;
         Timer sub_timer;

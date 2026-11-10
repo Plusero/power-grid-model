@@ -8,7 +8,7 @@ SPDX-License-Identifier: MPL-2.0
 
 State estimation by default returns deterministic state estimates.
 The math solver can also report how uncertain that estimate is, with the variance of the voltage magnitude and voltage angle
-of requested buses.
+of requested buses, and of the power and current at requested branch sides.
 This is available for [iterative linear](se-algorithms.md#iterative-linear-state-estimation) (ILSE) and
 [Newton-Raphson](se-algorithms.md#newton-raphson-state-estimation) (NRSE) state estimation, in symmetric and asymmetric
 calculations.
@@ -22,7 +22,7 @@ After the estimate has converged, the calculation takes three steps:
 
 1. Obtain the LU factors of the augmented matrix that state estimation solves.
 2. Compute the blocks of its inverse on the LU sparsity pattern. Their state part is the state covariance.
-3. Convert the covariance block of each requested bus into a magnitude and an angle variance.
+3. Convert the covariance blocks of each requested bus or branch into the variances of its outputs.
 
 
 ## Augmented system
@@ -147,6 +147,8 @@ The two estimators label this block differently:
 The [block selective inverse](dense-and-selective-inverse.md#block-sparse-matrices) replaces the LU factors of
 $\bar{A}_{\mathrm{ps}}$ by the blocks $\bar{Z}_{ij}$ on the LU sparsity pattern.
 A bus voltage needs only the diagonal block $C_{x,ii}$ of its own bus.
+A branch output also needs the blocks $C_{x,ij}$ of the two buses of the branch; such a pair is always on the LU
+sparsity pattern.
 
 The LU factors come from the estimator:
 
@@ -162,6 +164,7 @@ reported as invalid. The handling of pivot perturbation will come later.
 
 ## Voltage variances
 
+At a zero estimated voltage, magnitude and angle are not defined and are reported invalid.
 
 For NRSE, angle and magnitude are state coordinates, so their variances are diagonal entries of $C_{x,ii}$:
 
@@ -258,13 +261,58 @@ at once.
 The solve needs the LU factors, so it runs before the selective inversion overwrites them.
 The [appendix](#appendix-angle-reference-transformation) derives these formulas.
 
+## Branch variances
+
+A branch request selects a branch and its `from` or `to` side.
+The admittance row of that side gives the current $I = \sum_k c_k U_k$ over the phases of both buses, and the power
+entering the branch at that side is $S = U_t I^*$, with $U_t$ the voltage at that side.
+Transformer ratios, phase shifts and branch shunts are part of the coefficients $c_k$, as in the ordinary branch
+results.
+
+Every output is a real function of the voltages of the two buses, so its first-order variance is $d\,C_w\,d^T$.
+Here $d$ is its derivative and $C_w$ the covariance of those voltages in rectangular coordinates
+$w_i = [\operatorname{Re} U_i, \operatorname{Im} U_i]$:
+
+- **ILSE:** a proper complex $V_{ij}$ gives
+  $\operatorname{Cov}(\operatorname{Re}, \operatorname{Re}) = \operatorname{Cov}(\operatorname{Im}, \operatorname{Im})
+  = \frac{1}{2}\operatorname{Re} V_{ij}$ and
+  $\operatorname{Cov}(\operatorname{Im}, \operatorname{Re}) = -\operatorname{Cov}(\operatorname{Re}, \operatorname{Im})
+  = \frac{1}{2}\operatorname{Im} V_{ij}$.
+- **NRSE:** $C_{w,ij} = J_i C_{x,ij} J_j^T$, with $J_i$ the derivative of $w_i$ with respect to the polar state of
+  bus $i$.
+
+From here on both estimators use the same code.
+The derivatives are:
+
+- power: $dS = I^* dU_t + U_t\,(\sum_k c_k\,dU_k)^*$, whose real and imaginary parts give active and reactive power.
+  A proper complex voltage therefore still gives a power with nonzero pseudo-covariance;
+- current magnitude: $\operatorname{Re}(I^* dI) / |I|$;
+- current angle: $\operatorname{Im}(dI / I)$.
+
+Power and current magnitude do not depend on the angle reference.
+A current angle that state estimation reports relative to the slack phase-$a$ angle $\theta_s$ has variance
+
+$$
+\operatorname{Var}(\arg I) + \operatorname{Var}(\theta_s) - 2 \operatorname{Cov}(\arg I, \theta_s),
+$$
+
+with the cross term from the additional solve, as for [voltage angles](#angle-reference).
+
+A requested side that is not connected to a bus is invalid; a connected side ignores an absent opposite bus.
+A current whose squared modulus is not a normal number has neither magnitude derivative nor angle, so both are invalid,
+while the power variances stay defined.
+Branch results are per unit; conversion to physical units is left to the caller.
+
 ## Request and result
 
 The request and the result are passed to `run_state_estimation` in an optional `StateEstimationUQContext`.
 A request lists buses by their index in the island and selects magnitude, angle or both.
+It can also list branch sides, by branch index and side, and select active power, reactive power, current magnitude
+and current angle.
 The result has one row per request entry, in request order, with one value per phase.
 It is written only after both the estimate and its uncertainty are complete.
-A bus index out of range is rejected before solving, and a failed estimate leaves the result untouched.
+A bus or branch index out of range, or an unknown branch side, is rejected before solving, and a failed estimate
+leaves the result untouched.
 
 Each value holds the signed variance $v$ (`raw_variance`), the sum $a$ of the magnitudes of the terms that were added
 to obtain it (`absolute_scale`), the standard deviation `sigma` and a status.
@@ -274,7 +322,7 @@ With $\varepsilon$ the machine epsilon of `double`:
 | ------------------ | ---------------------------------------------------------------- | ---------- |
 | `valid`            | $v \ge 0$                                                        | $\sqrt{v}$ |
 | `clipped_roundoff` | $-1000\,\varepsilon\, a \le v < 0$, attributed to cancellation   | $0$        |
-| `invalid`          | $v < -1000\,\varepsilon\, a$, or nonfinite                       | NaN        |
+| `invalid`          | $v < -1000\,\varepsilon\, a$, nonfinite, or an undefined quantity | NaN        |
 | `not_requested`    | the quantity was not selected                                    | NaN        |
 
 If the LU factors are not available, because the factorization failed or needed pivot perturbation, the estimate is

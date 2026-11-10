@@ -4,20 +4,15 @@
 
 #pragma once
 
-// Voltage magnitude and angle uncertainty of the state-estimation output for one island math model, and
-// the post-solve entry point that ILSE and NRSE call.
+// Voltage magnitude and angle uncertainty of the state-estimation output for one island math model.
 
-#include "measured_values.hpp"
 #include "state_estimation_uq.hpp"
-#include "y_bus.hpp"
 
 #include "../common/common.hpp"
-#include "../common/exception.hpp"
-#include "../common/three_phase_tensor.hpp"
 
+#include <cmath>
 #include <complex>
 #include <cstddef>
-#include <vector>
 
 namespace power_grid_model::math_solver::state_estimation_uq {
 
@@ -52,7 +47,8 @@ template <class Workspace> double angle_covariance_with_slack(Workspace const& w
 // The variance of such a slack-relative angle is
 // Var(theta_i - theta_s) = Var(theta_i) + Var(theta_s) - 2 Cov(theta_i,theta_s)
 // The variance of the reference angle itself is exactly zero.
-template <class Workspace> UQPhaseValue angle_uncertainty(Workspace const& workspace, Idx bus, int phase) {
+template <class Workspace>
+UQPhaseValue angle_uncertainty(Workspace const& workspace, Idx bus, int phase, bool defined) {
     Idx const slack_bus = workspace.slack_bus();
     RealSum sum;
     if (!workspace.report_relative_angle()) {
@@ -62,11 +58,12 @@ template <class Workspace> UQPhaseValue angle_uncertainty(Workspace const& works
         sum.add(absolute_angle_variance(workspace, slack_bus, 0));          // Var(theta_s)
         sum.add(-2.0 * angle_covariance_with_slack(workspace, bus, phase)); // -2 Cov(theta_i, theta_s)
     }
-    return finalize_variance(sum);
+    return finalize_variance(sum, defined);
 }
 
 // Uncertainty of one voltage magnitude, which does not depend on the angle reference.
-template <class Workspace> UQPhaseValue magnitude_uncertainty(Workspace const& workspace, Idx bus, int phase) {
+template <class Workspace>
+UQPhaseValue magnitude_uncertainty(Workspace const& workspace, Idx bus, int phase, bool defined) {
     RealSum sum;
     if constexpr (Workspace::uses_complex_state) {
         // Re(V_ii) / 2
@@ -74,7 +71,7 @@ template <class Workspace> UQPhaseValue magnitude_uncertainty(Workspace const& w
     } else {
         sum.add(workspace.state_variance(bus, phase + Workspace::phase_count));
     }
-    return finalize_variance(sum);
+    return finalize_variance(sum, defined);
 }
 
 // Voltage uncertainty for all requested buses; result rows follow the request order.
@@ -87,52 +84,18 @@ calculate_voltage_uq_results(Workspace const& workspace, StateEstimationUQReques
         auto const& voltage_request = request.voltage[index];
         auto& output = result.voltage[index];
         for (int phase = 0; phase != Workspace::phase_count; ++phase) {
+            // Magnitude and angle are not defined at a zero or nonfinite voltage.
+            double const magnitude = std::abs(workspace.phase_voltage(voltage_request.bus, phase));
+            bool const defined = std::isfinite(magnitude) && magnitude > 0.0;
             if (voltage_request.magnitude) {
-                output.magnitude.phase[phase] = magnitude_uncertainty(workspace, voltage_request.bus, phase);
+                output.magnitude.phase[phase] = magnitude_uncertainty(workspace, voltage_request.bus, phase, defined);
             }
             if (voltage_request.angle) {
-                output.angle.phase[phase] = angle_uncertainty(workspace, voltage_request.bus, phase);
+                output.angle.phase[phase] = angle_uncertainty(workspace, voltage_request.bus, phase, defined);
             }
         }
     }
     return result;
-}
-
-// Every requested quantity is invalid. Quantities that were not requested stay not_requested.
-template <symmetry_tag sym> StateEstimationUQResult<sym> invalid_results(StateEstimationUQRequest const& request) {
-    StateEstimationUQResult<sym> result;
-    result.voltage.resize(request.voltage.size());
-    for (std::size_t index = 0; index != request.voltage.size(); ++index) {
-        auto const& voltage_request = request.voltage[index];
-        auto& output = result.voltage[index];
-        for (std::size_t phase = 0; phase != output.magnitude.phase.size(); ++phase) {
-            if (voltage_request.magnitude) {
-                output.magnitude.phase[phase].raw_status = UQVarianceStatus::invalid;
-            }
-            if (voltage_request.angle) {
-                output.angle.phase[phase].raw_status = UQVarianceStatus::invalid;
-            }
-        }
-    }
-    return result;
-}
-
-// Requested uncertainties for one island at the converged estimate `u`.
-// `gain` and `factorization` are passed on to the Workspace constructor. If that constructor cannot factorize
-// the matrix (SparseMatrixError), the estimate is unaffected and every requested uncertainty is invalid.
-template <class Workspace, class Gain>
-StateEstimationUQResult<typename Workspace::Symmetry>
-calculate_results(YBus<typename Workspace::Symmetry> const& y_bus, std::vector<Gain> const& gain,
-                  MeasuredValues<typename Workspace::Symmetry> const& measured_values,
-                  ComplexValueVector<typename Workspace::Symmetry> const& u, StateEstimationUQRequest const& request,
-                  typename Workspace::Factorization const* factorization = nullptr) {
-    try {
-        Workspace const workspace{
-            y_bus, gain, measured_values.variance_normalization(), u, measured_values.has_angle(), factorization};
-        return calculate_voltage_uq_results(workspace, request);
-    } catch (SparseMatrixError const&) {
-        return invalid_results<typename Workspace::Symmetry>(request);
-    }
 }
 
 } // namespace power_grid_model::math_solver::state_estimation_uq

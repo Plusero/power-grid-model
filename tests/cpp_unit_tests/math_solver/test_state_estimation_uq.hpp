@@ -8,6 +8,7 @@
 // - small networks with the sensor layout the tests need,
 // - the augmented gain matrix written out from its definition, compared through a dense inverse,
 // - the first-order variance of the estimate from the estimator's own sensitivity to each measurement.
+// Both references cover the bus voltages and the branch power and current.
 
 #include <power_grid_model/calculation_parameters.hpp>
 #include <power_grid_model/common/common.hpp>
@@ -16,6 +17,7 @@
 #include <power_grid_model/math_solver/measured_values.hpp>
 #include <power_grid_model/math_solver/observability.hpp>
 #include <power_grid_model/math_solver/state_estimation_uq.hpp>
+#include <power_grid_model/math_solver/state_estimation_uq_branch.hpp>
 #include <power_grid_model/math_solver/state_estimation_uq_voltage.hpp>
 #include <power_grid_model/math_solver/state_estimation_uq_workspace.hpp>
 #include <power_grid_model/math_solver/y_bus.hpp>
@@ -56,6 +58,8 @@ inline double phase_value(double x, int /*phase*/) { return x; }
 inline double phase_value(RealValue<asymmetric_t> const& x, int phase) { return x(phase); }
 inline DoubleComplex phase_value(DoubleComplex const& x, int /*phase*/) { return x; }
 inline DoubleComplex phase_value(ComplexValue<asymmetric_t> const& x, int phase) { return x(phase); }
+inline void set_phase_value(DoubleComplex& x, int /*phase*/, DoubleComplex value) { x = value; }
+inline void set_phase_value(ComplexValue<asymmetric_t>& x, int phase, DoubleComplex value) { x(phase) = value; }
 inline DoubleComplex tensor_entry(DoubleComplex const& y, int /*row*/, int /*col*/) { return y; }
 inline DoubleComplex tensor_entry(ComplexTensor<asymmetric_t> const& y, int row, int col) { return y(row, col); }
 
@@ -156,11 +160,12 @@ template <symmetry_tag sym> MathModelParam<sym> parameters(Idx branches) {
     return param;
 }
 
-// The true voltage at `bus` in the four-bus network, from which its measurements are computed.
+// The true voltage at `bus` in the four-bus network, from which its measurements are computed. No angle is
+// zero.
 template <symmetry_tag sym> ComplexValue<sym> bus_voltage(Idx bus) {
     constexpr double third = 2.0 * std::numbers::pi / 3.0;
     double const offset = 0.01 * static_cast<double>(bus);
-    double const angle = offset - 0.03;
+    double const angle = (2.0 * offset) - 0.03;
     if constexpr (is_symmetric_v<sym>) {
         return std::polar(1.01 + offset, angle);
     } else {
@@ -266,6 +271,18 @@ std::vector<Gain> augmented_gain(YBus<sym> const& y_bus, MeasuredValues<sym> con
     }
     return blocks;
 }
+
+// Power and current of one branch side and phase from the branch equations: active power, reactive power,
+// current magnitude and current angle. The angle is relative to `reference_angle`.
+template <symmetry_tag sym>
+std::array<double, 4> branch_outputs(std::vector<BranchSolverOutput<sym>> const& flow, Idx branch, int side, int phase,
+                                     double reference_angle) {
+    DoubleComplex const power = phase_value(side == 0 ? flow[branch].s_f : flow[branch].s_t, phase);
+    DoubleComplex const current = phase_value(side == 0 ? flow[branch].i_f : flow[branch].i_t, phase);
+    return {power.real(), power.imag(), std::abs(current), std::arg(current) - reference_angle};
+}
+inline constexpr int n_branch_output = 4;
+inline constexpr int current_angle_output = 3;
 
 /*
 The four-bus network of check_against_dense_inverse(), radial or as a ring:
@@ -405,9 +422,108 @@ void check_voltage_outputs(StateEstimationUQResult<sym> const& outputs,
     }
 }
 
-// On the four-bus network above, compare the covariance entries and voltage variances of the workspace, and the
-// voltage variances that `Solver` reports, with a dense inverse of the augmented gain. With `relative` no angle
-// is measured; `slack_voltage_sensor` then decides whether the virtual angle bus of NRSE is the slack bus.
+// Compare the branch outputs of the workspace with the dense covariance. The derivative of each output with
+// respect to the real state coordinates comes from central differences of the branch equations, and the expected
+// variance is d C d^T. The real coordinates of a bus are [Re U, Im U] for the complex state and the state itself
+// otherwise.
+template <symmetry_tag sym, class Workspace, class Scalar>
+void check_branch_outputs(Workspace const& workspace, YBus<sym> const& y_bus, ComplexValueVector<sym> const& u,
+                          Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> const& covariance, bool relative,
+                          Idx slack) {
+    using Dense = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
+    constexpr bool uses_complex_state = Eigen::NumTraits<Scalar>::IsComplex;
+    constexpr int phases = n_phase<sym>;
+    constexpr int N = uses_complex_state ? phases : 2 * phases;
+    constexpr int D = uses_complex_state ? 2 * N : N;
+    Idx const n_bus = y_bus.size();
+    Idx const n_branch = y_bus.math_topology().n_branch();
+    Eigen::MatrixXd real_covariance(n_bus * D, n_bus * D);
+    if constexpr (uses_complex_state) {
+        for (Idx row = 0; row != n_bus; ++row) {
+            for (Idx col = 0; col != n_bus; ++col) {
+                Dense const block = covariance.block(row * N, col * N, N, N);
+                real_covariance.block(row * D, col * D, N, N) = block.real() / 2.0;
+                real_covariance.block(row * D, col * D + N, N, N) = -block.imag() / 2.0;
+                real_covariance.block(row * D + N, col * D, N, N) = block.imag() / 2.0;
+                real_covariance.block(row * D + N, col * D + N, N, N) = block.real() / 2.0;
+            }
+        }
+    } else {
+        real_covariance = covariance;
+    }
+    auto const output_index = [](Idx branch, int side, int phase, int quantity) {
+        return ((((branch * 2) + side) * phases) + phase) * n_branch_output + quantity;
+    };
+    auto const all_outputs = [&](Idx bus, int coordinate, double delta) {
+        auto shifted = u;
+        DoubleComplex value = phase_value(u[bus], coordinate % phases);
+        if constexpr (uses_complex_state) {
+            value += coordinate < phases ? DoubleComplex{delta, 0.0} : DoubleComplex{0.0, delta};
+        } else {
+            value *= coordinate < phases ? std::polar(1.0, delta) : DoubleComplex{1.0 + delta / std::abs(value)};
+        }
+        set_phase_value(shifted[bus], coordinate % phases, value);
+        auto const flow = y_bus.template calculate_branch_flow<BranchSolverOutput<sym>>(shifted);
+        double const reference_angle = relative ? std::arg(phase_value(shifted[slack], 0)) : 0.0;
+        Eigen::VectorXd result(output_index(n_branch, 0, 0, 0));
+        for (Idx branch = 0; branch != n_branch; ++branch) {
+            for (int side = 0; side != 2; ++side) {
+                for (int phase = 0; phase != phases; ++phase) {
+                    auto const values = branch_outputs<sym>(flow, branch, side, phase, reference_angle);
+                    for (int quantity = 0; quantity != n_branch_output; ++quantity) {
+                        result(output_index(branch, side, phase, quantity)) = values[quantity];
+                    }
+                }
+            }
+        }
+        return result;
+    };
+    constexpr double step = 1e-6;
+    Eigen::MatrixXd derivative(output_index(n_branch, 0, 0, 0), n_bus * D);
+    for (Idx bus = 0; bus != n_bus; ++bus) {
+        for (int coordinate = 0; coordinate != D; ++coordinate) {
+            Eigen::VectorXd difference = all_outputs(bus, coordinate, step) - all_outputs(bus, coordinate, -step);
+            for (Idx index = current_angle_output; index < difference.size(); index += n_branch_output) {
+                difference(index) = std::remainder(difference(index), 2.0 * std::numbers::pi);
+            }
+            derivative.col(bus * D + coordinate) = difference / (2.0 * step);
+        }
+    }
+    Eigen::VectorXd const expected_branch = (derivative * real_covariance * derivative.transpose()).diagonal();
+
+    StateEstimationUQRequest request;
+    for (Idx branch = 0; branch != n_branch; ++branch) {
+        request.branch.push_back({branch, BranchSide::from, true, true, true, true});
+        request.branch.push_back({branch, BranchSide::to, true, true, true, true});
+    }
+    StateEstimationUQResult<sym> branch_result;
+    state_estimation_uq::branch_results(workspace, y_bus, request, branch_result);
+    REQUIRE(branch_result.branch.size() == static_cast<std::size_t>(2 * n_branch));
+    for (Idx branch = 0; branch != n_branch; ++branch) {
+        CAPTURE(branch);
+        for (int side = 0; side != 2; ++side) {
+            CAPTURE(side);
+            auto const& output = branch_result.branch[(2 * branch) + side];
+            for (int phase = 0; phase != phases; ++phase) {
+                CAPTURE(phase);
+                std::array<UQPhaseValue, n_branch_output> const values{
+                    output.active_power.phase[phase], output.reactive_power.phase[phase],
+                    output.current_magnitude.phase[phase], output.current_angle.phase[phase]};
+                for (int quantity = 0; quantity != n_branch_output; ++quantity) {
+                    CAPTURE(quantity);
+                    CHECK(values[quantity].raw_status == UQVarianceStatus::valid);
+                    CHECK(values[quantity].raw_variance ==
+                          RelativeTo{expected_branch(output_index(branch, side, phase, quantity)), 1e-6});
+                }
+            }
+        }
+    }
+}
+
+// On the four-bus network above, compare the covariance entries, voltage variances and branch outputs of the
+// workspace, and the voltage variances that `Solver` reports, with a dense inverse of the augmented gain. With
+// `relative` no angle is measured; `slack_voltage_sensor` then decides whether the virtual angle bus of NRSE is the
+// slack bus.
 template <class Gain, class Unknown, class Solver>
 void check_against_dense_inverse(bool mesh, bool relative, Idx slack, bool slack_voltage_sensor, double alpha) {
     CAPTURE(Solver::is_NRSE_solver);
@@ -422,7 +538,14 @@ void check_against_dense_inverse(bool mesh, bool relative, Idx slack, bool slack
 
     // The network, its state `u`, and measurements that agree with that state.
     auto const topo = four_bus_topology(mesh, slack, slack_voltage_sensor);
-    YBus<sym> const y_bus{topo, parameters<sym>(topo.n_branch())};
+    // Admittances with a different argument per branch, so that the covariance of the complex state is not real.
+    auto param = parameters<sym>(topo.n_branch());
+    for (Idx branch = 0; branch != topo.n_branch(); ++branch) {
+        ComplexTensor<sym> const y{series_admittance<sym>() *
+                                   std::polar(1.0, (0.4 * static_cast<double>(branch)) - 1.2)};
+        param.branch_param[branch] = {y, ComplexTensor<sym>{-y}, ComplexTensor<sym>{-y}, y};
+    }
+    YBus<sym> const y_bus{topo, param};
     ComplexValueVector<sym> u(n_bus);
     for (Idx bus = 0; bus != n_bus; ++bus) {
         u[bus] = bus_voltage<sym>(bus);
@@ -461,15 +584,29 @@ void check_against_dense_inverse(bool mesh, bool relative, Idx slack, bool slack
     check_voltage_outputs(state_estimation_uq::calculate_voltage_uq_results(workspace, request), covariance, u,
                           relative, slack, tolerance);
 
-    // 3. The voltage variances of the estimator, which assembles and factorizes its own gain. The measurements
+    // 3. The covariance blocks of the workspace, for all bus pairs on the LU sparsity pattern.
+    for (Idx row = 0; row != n_bus; ++row) {
+        for (Idx k = y_bus.row_indptr_lu()[row]; k != y_bus.row_indptr_lu()[row + 1]; ++k) {
+            Idx const col = y_bus.col_indices_lu()[k];
+            CAPTURE(row);
+            CAPTURE(col);
+            CHECK((workspace.state_covariance(row, col) - covariance.block(row * N, col * N, N, N)).norm() <
+                  4.0 * tolerance);
+        }
+    }
+
+    // 4. The branch outputs of the workspace.
+    check_branch_outputs(workspace, y_bus, u, covariance, relative, slack);
+
+    // 5. The voltage variances of the estimator, which assembles and factorizes its own gain. The measurements
     // were computed from `u`, so `u` fits them with zero residual and the estimator converges to `u`. Without a
     // measured voltage angle, the estimator converges to `u` rotated so that the phase-a angle of the slack bus
     // is zero.
     // The tolerances below are loose because of one case: three-phase ILSE without a measured angle converges
-    // slowly in the angle between the phases and stops about 3e-6 from `u`.
+    // slowly in the angle between the phases and stops about 6e-6 from `u`.
     // NRSE agrees with the dense inverse within 1e-13.
-    constexpr double estimator_err_tol = 1e-10;
-    constexpr double estimator_state_tolerance = 1e-5;
+    constexpr double estimator_err_tol = 1e-9;
+    constexpr double estimator_state_tolerance = 3e-5;
     constexpr double estimator_tolerance = 1e-6;
     Solver solver{y_bus, topo};
     auto const [estimate, estimator_outputs] = run_with_uq(solver, y_bus, input, request, estimator_err_tol, 100);
@@ -500,12 +637,6 @@ inline void shift_voltage_magnitude(DoubleComplex& measured, double delta) {
 }
 inline void shift_voltage_angle(DoubleComplex& measured, double delta) { measured *= std::polar(1.0, delta); }
 
-// Variances per bus (row) and phase (column).
-struct VoltageVariance {
-    Eigen::ArrayXXd magnitude;
-    Eigen::ArrayXXd angle;
-};
-
 // First-order variance of the estimate by brute force, as a reference that uses none of the uncertainty code.
 // Mechanism: each measured scalar is shifted up and down and the estimator is rerun, and the central difference
 // gives d output / d scalar. With independent measurement errors, the variance of an output is the sum of
@@ -513,36 +644,83 @@ struct VoltageVariance {
 // Pros: it shares no formula with the code under test, it takes the angles as the estimator reports them, and
 // it equals the covariance from the inverse gain matrix when the measurements agree with one network state.
 // Cons: it needs two tightly converged estimator runs per measured scalar, so it only suits small networks.
-template <symmetry_tag sym, class Solver>
-VoltageVariance sensitivity_variance(Solver& solver, YBus<sym> const& y_bus, StateEstimationInput<sym> const& input,
-                                     std::vector<MeasuredScalar<sym>> const& scalars) {
+//
+// `accumulate(plus, minus, weight)` receives the estimator output for one scalar shifted up and down, and
+// the factor variance / (2 * step)^2 that turns a squared difference into its contribution.
+template <symmetry_tag sym, class Solver, class Accumulate>
+void for_each_sensitivity(Solver& solver, YBus<sym> const& y_bus, StateEstimationInput<sym> const& input,
+                          std::vector<MeasuredScalar<sym>> const& scalars, Accumulate&& accumulate) {
     constexpr double step = 1e-5;
     constexpr double err_tol = 1e-12;
     constexpr Idx max_iter = 500;
-    constexpr int phases = n_phase<sym>;
     common::logging::NoLogger log;
     auto const estimate = [&](double delta, MeasuredScalar<sym> const& scalar) {
         auto shifted = input;
         scalar.shift(shifted, delta);
-        return solver.run_state_estimation(y_bus, shifted, err_tol, max_iter, log).u;
+        return solver.run_state_estimation(y_bus, shifted, err_tol, max_iter, log);
     };
+    for (auto const& scalar : scalars) {
+        accumulate(estimate(step, scalar), estimate(-step, scalar), scalar.variance / (4.0 * step * step));
+    }
+}
+
+// Variances per bus (row) and phase (column).
+struct VoltageVariance {
+    Eigen::ArrayXXd magnitude;
+    Eigen::ArrayXXd angle;
+};
+
+template <symmetry_tag sym, class Solver>
+VoltageVariance sensitivity_variance(Solver& solver, YBus<sym> const& y_bus, StateEstimationInput<sym> const& input,
+                                     std::vector<MeasuredScalar<sym>> const& scalars) {
+    constexpr int phases = n_phase<sym>;
     Idx const n_bus = y_bus.size();
     VoltageVariance result{.magnitude = Eigen::ArrayXXd::Zero(n_bus, phases),
                            .angle = Eigen::ArrayXXd::Zero(n_bus, phases)};
-    for (auto const& scalar : scalars) {
-        auto const plus = estimate(step, scalar);
-        auto const minus = estimate(-step, scalar);
+    for_each_sensitivity(solver, y_bus, input, scalars, [&](auto const& plus, auto const& minus, double weight) {
         for (Idx bus = 0; bus != n_bus; ++bus) {
             for (int phase = 0; phase != phases; ++phase) {
-                DoubleComplex const u_plus = phase_value(plus[bus], phase);
-                DoubleComplex const u_minus = phase_value(minus[bus], phase);
-                double const d_magnitude = (std::abs(u_plus) - std::abs(u_minus)) / (2.0 * step);
-                double const d_angle = std::arg(u_plus / u_minus) / (2.0 * step);
-                result.magnitude(bus, phase) += d_magnitude * d_magnitude * scalar.variance;
-                result.angle(bus, phase) += d_angle * d_angle * scalar.variance;
+                DoubleComplex const u_plus = phase_value(plus.u[bus], phase);
+                DoubleComplex const u_minus = phase_value(minus.u[bus], phase);
+                double const d_magnitude = std::abs(u_plus) - std::abs(u_minus);
+                double const d_angle = std::arg(u_plus / u_minus);
+                result.magnitude(bus, phase) += d_magnitude * d_magnitude * weight;
+                result.angle(bus, phase) += d_angle * d_angle * weight;
             }
         }
-    }
+    });
+    return result;
+}
+
+// Variances per branch side (row 2 * branch + side, with side 0 the from side) and phase (column), for the
+// quantities in the order of branch_outputs.
+using BranchVariance = std::array<Eigen::ArrayXXd, n_branch_output>;
+
+template <symmetry_tag sym, class Solver>
+BranchVariance branch_sensitivity_variance(Solver& solver, YBus<sym> const& y_bus,
+                                           StateEstimationInput<sym> const& input,
+                                           std::vector<MeasuredScalar<sym>> const& scalars) {
+    constexpr int phases = n_phase<sym>;
+    Idx const n_branch = y_bus.math_topology().n_branch();
+    BranchVariance result;
+    result.fill(Eigen::ArrayXXd::Zero(2 * n_branch, phases));
+    for_each_sensitivity(solver, y_bus, input, scalars, [&](auto const& plus, auto const& minus, double weight) {
+        for (Idx branch = 0; branch != n_branch; ++branch) {
+            for (int side = 0; side != 2; ++side) {
+                for (int phase = 0; phase != phases; ++phase) {
+                    auto const up = branch_outputs<sym>(plus.branch, branch, side, phase, 0.0);
+                    auto const down = branch_outputs<sym>(minus.branch, branch, side, phase, 0.0);
+                    for (int quantity = 0; quantity != n_branch_output; ++quantity) {
+                        double difference = up[quantity] - down[quantity];
+                        if (quantity == current_angle_output) {
+                            difference = std::remainder(difference, 2.0 * std::numbers::pi);
+                        }
+                        result[quantity]((2 * branch) + side, phase) += difference * difference * weight;
+                    }
+                }
+            }
+        }
+    });
     return result;
 }
 
