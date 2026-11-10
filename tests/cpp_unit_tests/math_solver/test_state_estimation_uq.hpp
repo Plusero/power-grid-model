@@ -18,6 +18,7 @@
 #include <power_grid_model/math_solver/observability.hpp>
 #include <power_grid_model/math_solver/state_estimation_uq.hpp>
 #include <power_grid_model/math_solver/state_estimation_uq_branch.hpp>
+#include <power_grid_model/math_solver/state_estimation_uq_completion.hpp>
 #include <power_grid_model/math_solver/state_estimation_uq_voltage.hpp>
 #include <power_grid_model/math_solver/state_estimation_uq_workspace.hpp>
 #include <power_grid_model/math_solver/y_bus.hpp>
@@ -330,13 +331,12 @@ StateEstimationInput<sym> four_bus_input(ComplexValueVector<sym> const& u, Compl
     return input;
 }
 
-// The dense state covariance C_x = alpha * (state rows and columns of the inverse of the gain `blocks`).
+// The dense inverse of the gain `blocks`.
 template <symmetry_tag sym, class Gain>
-Eigen::Matrix<typename Gain::Scalar, Eigen::Dynamic, Eigen::Dynamic>
-dense_state_covariance(YBus<sym> const& y_bus, std::vector<Gain> const& blocks, double alpha) {
+Eigen::Matrix<typename Gain::Scalar, Eigen::Dynamic, Eigen::Dynamic> dense_inverse(YBus<sym> const& y_bus,
+                                                                                   std::vector<Gain> const& blocks) {
     using Dense = Eigen::Matrix<typename Gain::Scalar, Eigen::Dynamic, Eigen::Dynamic>;
     constexpr int size = Gain::RowsAtCompileTime;
-    constexpr int N = size / 2;
     Idx const n_bus = y_bus.size();
     Dense dense = Dense::Zero(n_bus * size, n_bus * size);
     for (Idx row = 0; row != n_bus; ++row) {
@@ -346,6 +346,16 @@ dense_state_covariance(YBus<sym> const& y_bus, std::vector<Gain> const& blocks, 
     }
     Dense const inverse = dense.fullPivLu().inverse();
     CHECK((dense * inverse - Dense::Identity(dense.rows(), dense.cols())).norm() < 1e-11);
+    return inverse;
+}
+
+// The dense state covariance C_x = alpha * (state rows and columns of `inverse`), whose bus blocks have `size` rows.
+template <class Scalar>
+Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>
+dense_state_covariance(Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> const& inverse, int size, double alpha) {
+    using Dense = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
+    int const N = size / 2;
+    Idx const n_bus = inverse.rows() / size;
     Dense covariance(n_bus * N, n_bus * N);
     for (Idx row = 0; row != n_bus; ++row) {
         for (Idx col = 0; col != n_bus; ++col) {
@@ -520,10 +530,81 @@ void check_branch_outputs(Workspace const& workspace, YBus<sym> const& y_bus, Co
     }
 }
 
-// On the four-bus network above, compare the covariance entries, voltage variances and branch outputs of the
-// workspace, and the voltage variances that `Solver` reports, with a dense inverse of the augmented gain. With
-// `relative` no angle is measured; `slack_voltage_sensor` then decides whether the virtual angle bus of NRSE is the
-// slack bus.
+// Compare the pairs off the LU sparsity pattern, which the completion derives through a common neighbour k, with
+// the dense inverse. That gives Zbar_jk Zbar_kk^-1 Zbar_km for the reported k, and the pair itself, which the path
+// equals if k separates the two.
+template <class Workspace, class Scalar>
+void check_completed_pairs(Workspace const& workspace, MathModelTopology const& topo,
+                           ComplexValueVector<typename Workspace::Symmetry> const& u,
+                           Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> const& inverse, double alpha,
+                           bool mesh, double tolerance) {
+    using Dense = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
+    constexpr bool uses_complex_state = Eigen::NumTraits<Scalar>::IsComplex;
+    constexpr int phases = Workspace::phase_count;
+    constexpr int N = Workspace::StateMatrix::RowsAtCompileTime;
+    constexpr int size = 2 * N;
+    Idx const n_bus = std::ssize(u);
+    using Rectangular = Eigen::Matrix<double, 2 * phases, 2 * phases>;
+    auto const rectangular = [&](Idx row, Idx col, Dense const& inverse_corner) {
+        Rectangular result;
+        if constexpr (uses_complex_state) {
+            result << inverse_corner.real(), -inverse_corner.imag(), inverse_corner.imag(), inverse_corner.real();
+            result *= alpha / 2.0;
+        } else {
+            auto const to_rectangular = [&](Idx bus) {
+                Rectangular jacobian = Rectangular::Zero();
+                for (int phase = 0; phase != phases; ++phase) {
+                    DoubleComplex const voltage = phase_value(u[bus], phase);
+                    jacobian(phase, phase) = -voltage.imag();
+                    jacobian(phase, phases + phase) = voltage.real() / std::abs(voltage);
+                    jacobian(phases + phase, phase) = voltage.real();
+                    jacobian(phases + phase, phases + phase) = voltage.imag() / std::abs(voltage);
+                }
+                return jacobian;
+            };
+            result = alpha * to_rectangular(row) * inverse_corner * to_rectangular(col).transpose();
+        }
+        return result;
+    };
+    std::vector<std::vector<Idx>> neighbours(n_bus);
+    for (auto const& branch : topo.branch_bus_idx) {
+        neighbours[branch[0]].push_back(branch[1]);
+        neighbours[branch[1]].push_back(branch[0]);
+    }
+    state_estimation_uq::CovarianceCompletion completion{workspace, neighbours, neighbours};
+    Idx completed_pairs = 0;
+    for (Idx j = 0; j != n_bus; ++j) {
+        for (Idx m = j + 1; m != n_bus; ++m) {
+            if (workspace.find_block_index(j, m)) {
+                continue;
+            }
+            CAPTURE(j);
+            CAPTURE(m);
+            auto const result = completion.pair(j, m);
+            REQUIRE(result.block.valid);
+            ++completed_pairs;
+            Idx const k = result.diagnostic.middle_bus;
+            REQUIRE(k >= 0);
+            Dense const path = inverse.block(j * size, k * size, size, size) *
+                               inverse.block(k * size, k * size, size, size).inverse() *
+                               inverse.block(k * size, m * size, size, size);
+            Dense const path_corner = path.topLeftCorner(N, N);
+            CHECK((result.block.value - rectangular(j, m, path_corner)).norm() < 100.0 * tolerance);
+            Dense const exact_corner = inverse.block(j * size, m * size, N, N);
+            bool const exact = (result.block.value - rectangular(j, m, exact_corner)).norm() < 100.0 * tolerance;
+            CHECK(exact == (result.diagnostic.route == UQPairRoute::separator));
+            CHECK((result.diagnostic.route == UQPairRoute::separator ||
+                   result.diagnostic.route == UQPairRoute::augmented_path));
+        }
+    }
+    // The radial network completes its three pairs through the centre bus, the mesh one pair across the cycle.
+    CHECK(completed_pairs == (mesh ? 1 : 3));
+}
+
+// On the four-bus network above, compare the covariance entries, voltage variances, branch outputs and completed
+// pairs of the workspace, and the voltage variances that `Solver` reports, with a dense inverse of the augmented gain.
+// With `relative` no angle is measured; `slack_voltage_sensor` then decides whether the virtual angle bus of NRSE is
+// the slack bus.
 template <class Gain, class Unknown, class Solver>
 void check_against_dense_inverse(bool mesh, bool relative, Idx slack, bool slack_voltage_sensor, double alpha) {
     CAPTURE(Solver::is_NRSE_solver);
@@ -561,7 +642,8 @@ void check_against_dense_inverse(bool mesh, bool relative, Idx slack, bool slack
     Idx const first_measured_bus = slack_voltage_sensor || slack != 0 ? 0 : 1;
     Idx const virtual_bus = slack_voltage_sensor ? slack : first_measured_bus;
     auto const blocks = augmented_gain<sym, Gain>(y_bus, measured, u, injection, relative, virtual_bus);
-    auto const covariance = dense_state_covariance(y_bus, blocks, alpha);
+    auto const inverse = dense_inverse(y_bus, blocks);
+    auto const covariance = dense_state_covariance(inverse, Gain::RowsAtCompileTime, alpha);
     double const tolerance = 3e-12 * alpha; // not 1e-12, to loosen a bit for round-off error
 
     // 1. The covariance entries of the workspace.
@@ -598,7 +680,10 @@ void check_against_dense_inverse(bool mesh, bool relative, Idx slack, bool slack
     // 4. The branch outputs of the workspace.
     check_branch_outputs(workspace, y_bus, u, covariance, relative, slack);
 
-    // 5. The voltage variances of the estimator, which assembles and factorizes its own gain. The measurements
+    // 5. The pairs off the LU sparsity pattern that the completion derives.
+    check_completed_pairs(workspace, topo, u, inverse, alpha, mesh, tolerance);
+
+    // 6. The voltage variances of the estimator, which assembles and factorizes its own gain. The measurements
     // were computed from `u`, so `u` fits them with zero residual and the estimator converges to `u`. Without a
     // measured voltage angle, the estimator converges to `u` rotated so that the phase-a angle of the slack bus
     // is zero.

@@ -303,6 +303,39 @@ A current whose squared modulus is not a normal number has neither magnitude der
 while the power variances stay defined.
 Branch results are per unit; conversion to physical units is left to the caller.
 
+## Covariance of bus pairs off the sparsity pattern
+
+The selective inverse gives the blocks of $\bar{Z}$ on the LU sparsity pattern only.
+Nodal injection uncertainty also needs the covariance of two buses $j$ and $m$ that are both neighbours of a third bus
+but not on that pattern.
+`CovarianceCompletion` provides the covariance of the rectangular voltages of such a pair.
+It has no caller until injection uncertainty is added.
+
+- **Augmented path.** For a common neighbour $k$ of $j$ and $m$ in the graph of $\bar{A}_{\mathrm{ps}}$,
+  $\bar{Z}_{jm} \approx \bar{Z}_{jk} \bar{Z}_{kk}^{-1} \bar{Z}_{km}$ with the whole blocks, state coordinates and
+  multipliers; only the state part of the product is formed.
+  This is exact if $k$ separates $j$ and $m$ in that graph (route `separator`) and an approximation otherwise (route
+  `augmented_path`).
+  The common neighbours are tried in ascending order.
+  One whose block $\bar{Z}_{kk}$ has a ratio of smallest to largest singular value below $10^{-12}$ is skipped.
+  The solve uses partial pivoting with one step of iterative refinement.
+- **Mean path.** If every common neighbour was skipped, the result is the mean of $C_{w,jk} C_{w,kk}^{+} C_{w,km}$ over
+  the common neighbours $k$ in the branch topology, with $C_w$ the covariance of the rectangular voltages and
+  $C_{w,kk}^{+}$ its pseudo-inverse on the support of $C_{w,kk}$ (route `mean_path`).
+  This is an approximation.
+
+The covariance of a single bus is symmetrized, and eigenvalues that are negative within $1000\,\varepsilon$ times its
+Frobenius norm are set to zero; a more negative eigenvalue makes that bus, and every pair with it, invalid.
+A pair is also invalid if a block that its route needs is missing or not finite.
+An invalid pair is not retried on another route.
+
+With diagnostics requested, each pair reports its route and middle bus, and a warning if the relative residual of the
+middle solve exceeds $10^{-12}$ or the normalized correlation of the pair exceeds $1 + 10^{-6}$.
+The warning never changes a value or its validity.
+
+The covariances are those of the rectangular voltages without any angle reference, for both estimators.
+Injection power does not depend on the angle reference, so none is needed.
+
 ## Request and result
 
 The request and the result are passed to `run_state_estimation` in an optional `StateEstimationUQContext`.

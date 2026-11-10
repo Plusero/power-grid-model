@@ -16,6 +16,7 @@ add_executable(
     "test_state_estimation_uq.cpp"
     "test_state_estimation_uq_asym.cpp"
     "test_state_estimation_uq_branch.cpp"
+    "test_state_estimation_uq_completion.cpp"
     "test_observability.cpp"
     "test_measured_values.cpp"
     "test_y_bus.cpp"

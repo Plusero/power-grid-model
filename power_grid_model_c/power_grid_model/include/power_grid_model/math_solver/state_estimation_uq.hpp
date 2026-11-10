@@ -73,6 +73,18 @@ template <symmetry_tag sym> struct BranchUQResult {
     UQValue<sym> active_power, reactive_power, current_magnitude, current_angle;
 };
 
+// How the covariance of a pair of buses was obtained, see state_estimation_uq_completion.hpp.
+enum class UQPairRoute : IntS { stored, separator, augmented_path, mean_path, zero_target, invalid };
+// Diagnostic of one completed pair. approximation_warning marks a kept pair whose middle solve residual or
+// normalized correlation exceeds its limit; it never changes the route, the value or the validity.
+struct UQPairDiagnostic {
+    Idx first_bus = -1;
+    Idx second_bus = -1;
+    UQPairRoute route = UQPairRoute::invalid;
+    Idx middle_bus = -1;
+    bool approximation_warning = false;
+};
+
 // UQ results for one island.
 // voltage[k] and branch[k] answer the request rows voltage[k] and branch[k].
 template <symmetry_tag sym> struct StateEstimationUQResult {

@@ -17,6 +17,7 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <optional>
 #include <type_traits>
 #include <vector>
 
@@ -37,6 +38,8 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
     static_assert(phase_count == 1 || phase_count == 3);
     using Symmetry = std::conditional_t<phase_count == 1, symmetric_t, asymmetric_t>;
     using StateMatrix = Eigen::Matrix<Scalar, StateDim, StateDim>;
+    // A whole block of Zbar: the state coordinates of a bus followed by its multipliers.
+    using RawMatrix = Eigen::Matrix<Scalar, Gain::RowsAtCompileTime, Gain::ColsAtCompileTime>;
     // Covariance of the rectangular voltages x_i = [Re U_i, Im U_i] of buses, real parts of all phases first.
     using RectangularMatrix = Eigen::Matrix<double, 2 * phase_count, 2 * phase_count>;
     using RectangularVector = Eigen::Matrix<double, 2 * phase_count, 1>;
@@ -95,6 +98,9 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
         }
     }
 
+    // The factor alpha in C_x = alpha * (state rows and columns of Zbar).
+    double variance_normalization() const { return variance_normalization_; }
+
     // Variance C_x,ii(coordinate, coordinate) of the given state coordinate of `bus`.
     double state_variance(Idx bus, int coordinate) const {
         return variance_normalization_ * std::real(inverse_[lu_diag_[bus]](coordinate, coordinate));
@@ -110,20 +116,33 @@ template <class Gain, class Unknown, int StateDim = Gain::RowsAtCompileTime / 2>
     // Covariance block C_x,ij of the state coordinates of two buses. The pair must be on the LU sparsity
     // pattern, which holds for a bus with itself and for the two buses of a branch.
     StateMatrix state_covariance(Idx row, Idx col) const {
+        auto const index = find_block_index(row, col);
+        assert(index.has_value());
+        return variance_normalization_ * inverse_[*index].matrix().template topLeftCorner<StateDim, StateDim>();
+    }
+
+    // The blocks of Zbar themselves, for the completion of pairs that are not on the LU sparsity pattern.
+    Idx block_count() const { return static_cast<Idx>(inverse_.size()); }
+    std::optional<Idx> find_block_index(Idx row, Idx col) const {
         auto const first = col_indices_.begin() + row_indptr_[row];
         auto const last = col_indices_.begin() + row_indptr_[row + 1];
         auto const found = std::lower_bound(first, last, col);
-        assert(found != last && *found == col);
-        auto const& block = inverse_[static_cast<std::size_t>(found - col_indices_.begin())];
-        return variance_normalization_ * block.matrix().template topLeftCorner<StateDim, StateDim>();
+        if (found == last || *found != col) {
+            return std::nullopt;
+        }
+        return static_cast<Idx>(found - col_indices_.begin());
     }
+    Gain const& inverse_block_at(Idx index) const { return inverse_[index]; }
 
     // Power and current are functions of the rectangular voltages, whatever the state. The two functions
     // below give their covariance for either state, so that code which uses them needs no case distinction.
 
     // Cov(x_row, x_col). The bus pair must be on the LU sparsity pattern.
     RectangularMatrix rectangular_covariance(Idx row, Idx col) const {
-        auto const state = state_covariance(row, col);
+        return rectangular_covariance(row, col, state_covariance(row, col));
+    }
+    // The same for a given state covariance block C_ij of the two buses.
+    RectangularMatrix rectangular_covariance(Idx row, Idx col, StateMatrix const& state) const {
         if constexpr (uses_complex_state) {
             // A proper complex dU with V = E[dU dU^H] has Cov(Re, Re) = Cov(Im, Im) = Re(V) / 2 and
             // Cov(Im, Re) = -Cov(Re, Im) = Im(V) / 2.
