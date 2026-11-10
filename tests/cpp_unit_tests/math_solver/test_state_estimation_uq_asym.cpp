@@ -124,6 +124,29 @@ void check_branch_against_sensitivities(Solver& solver, YBus<Asym> const& y_bus,
     }
 }
 
+// Compare the NRSE nodal injections with the measurement-sensitivity reference.
+template <class Solver>
+void check_injection_against_sensitivities(Solver& solver, YBus<Asym> const& y_bus, MeasuredBuses const& measured) {
+    StateEstimationUQRequest request;
+    request.injection = {{0, true, true}, {1, true, true}};
+    auto const result = run_with_uq(solver, y_bus, measured.input, request, 1e-10, 100).uq;
+    auto const reference = injection_sensitivity_variance(solver, y_bus, measured.input, measured.scalars);
+    for (int bus = 0; bus != 2; ++bus) {
+        CAPTURE(bus);
+        for (int phase = 0; phase != 3; ++phase) {
+            CAPTURE(phase);
+            std::array<UQPhaseValue, 2> const values{result.injection[bus].active_power.phase[phase],
+                                                     result.injection[bus].reactive_power.phase[phase]};
+            for (int quantity = 0; quantity != 2; ++quantity) {
+                CAPTURE(quantity);
+                // Injection power does not depend on the angle reference.
+                CHECK(values[quantity].raw_status == UQVarianceStatus::valid);
+                CHECK(values[quantity].raw_variance == RelativeTo{reference[quantity](bus, phase), 1e-5});
+            }
+        }
+    }
+}
+
 // Compare the NRSE voltage variances with the measurement-sensitivity reference.
 void check_against_sensitivities(StateEstimationUQResult<Asym> const& result, VoltageVariance const& reference,
                                  bool absolute, Idx slack_bus, double voltage_variance) {
@@ -203,6 +226,7 @@ TEST_CASE_TEMPLATE("UQ three-phase voltage variances through the estimators", So
         }
         if constexpr (Solver::is_NRSE_solver) {
             check_branch_against_sensitivities(solver, y_bus, measured, absolute);
+            check_injection_against_sensitivities(solver, y_bus, measured);
             auto const reference = sensitivity_variance(solver, y_bus, measured.input, measured.scalars);
             check_against_sensitivities(result, reference, absolute, topo.slack_bus, voltage_variance);
         }

@@ -8,7 +8,7 @@
 // - small networks with the sensor layout the tests need,
 // - the augmented gain matrix written out from its definition, compared through a dense inverse,
 // - the first-order variance of the estimate from the estimator's own sensitivity to each measurement.
-// Both references cover the bus voltages and the branch power and current.
+// Both references cover the bus voltages, the branch power and current, and the nodal injections.
 
 #include <power_grid_model/calculation_parameters.hpp>
 #include <power_grid_model/common/common.hpp>
@@ -19,6 +19,7 @@
 #include <power_grid_model/math_solver/state_estimation_uq.hpp>
 #include <power_grid_model/math_solver/state_estimation_uq_branch.hpp>
 #include <power_grid_model/math_solver/state_estimation_uq_completion.hpp>
+#include <power_grid_model/math_solver/state_estimation_uq_injection.hpp>
 #include <power_grid_model/math_solver/state_estimation_uq_voltage.hpp>
 #include <power_grid_model/math_solver/state_estimation_uq_workspace.hpp>
 #include <power_grid_model/math_solver/y_bus.hpp>
@@ -432,47 +433,70 @@ void check_voltage_outputs(StateEstimationUQResult<sym> const& outputs,
     }
 }
 
+// The real form of a block of the state covariance: the covariance of [Re U, Im U] for the complex state, and the
+// block itself otherwise.
+template <class Scalar> Eigen::MatrixXd real_form(Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> const& block) {
+    if constexpr (Eigen::NumTraits<Scalar>::IsComplex) {
+        Eigen::MatrixXd result(2 * block.rows(), 2 * block.cols());
+        result << block.real(), -block.imag(), block.imag(), block.real();
+        return result / 2.0;
+    } else {
+        return block;
+    }
+}
+
+// The covariance of the real state coordinates of all buses, from the dense state covariance with `N` state
+// coordinates per bus.
+template <class Scalar>
+Eigen::MatrixXd real_covariance(Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> const& covariance, int N) {
+    using Dense = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
+    int const D = Eigen::NumTraits<Scalar>::IsComplex ? 2 * N : N;
+    Idx const n_bus = covariance.rows() / N;
+    Eigen::MatrixXd result(n_bus * D, n_bus * D);
+    for (Idx row = 0; row != n_bus; ++row) {
+        for (Idx col = 0; col != n_bus; ++col) {
+            Dense const block = covariance.block(row * N, col * N, N, N);
+            result.block(row * D, col * D, D, D) = real_form(block);
+        }
+    }
+    return result;
+}
+
+// The voltages `u` with one real state coordinate of `bus` shifted by `delta`. The real coordinates of a bus are
+// [Re U, Im U] for the complex state and [theta, |U|] otherwise.
+template <symmetry_tag sym>
+ComplexValueVector<sym> shifted_voltage(ComplexValueVector<sym> const& u, Idx bus, int coordinate, double delta,
+                                        bool uses_complex_state) {
+    constexpr int phases = n_phase<sym>;
+    auto shifted = u;
+    DoubleComplex value = phase_value(u[bus], coordinate % phases);
+    if (uses_complex_state) {
+        value += coordinate < phases ? DoubleComplex{delta, 0.0} : DoubleComplex{0.0, delta};
+    } else {
+        value *= coordinate < phases ? std::polar(1.0, delta) : DoubleComplex{1.0 + delta / std::abs(value)};
+    }
+    set_phase_value(shifted[bus], coordinate % phases, value);
+    return shifted;
+}
+
 // Compare the branch outputs of the workspace with the dense covariance. The derivative of each output with
 // respect to the real state coordinates comes from central differences of the branch equations, and the expected
-// variance is d C d^T. The real coordinates of a bus are [Re U, Im U] for the complex state and the state itself
-// otherwise.
+// variance is d C d^T.
 template <symmetry_tag sym, class Workspace, class Scalar>
 void check_branch_outputs(Workspace const& workspace, YBus<sym> const& y_bus, ComplexValueVector<sym> const& u,
                           Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> const& covariance, bool relative,
                           Idx slack) {
-    using Dense = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
     constexpr bool uses_complex_state = Eigen::NumTraits<Scalar>::IsComplex;
     constexpr int phases = n_phase<sym>;
     constexpr int N = uses_complex_state ? phases : 2 * phases;
     constexpr int D = uses_complex_state ? 2 * N : N;
     Idx const n_bus = y_bus.size();
     Idx const n_branch = y_bus.math_topology().n_branch();
-    Eigen::MatrixXd real_covariance(n_bus * D, n_bus * D);
-    if constexpr (uses_complex_state) {
-        for (Idx row = 0; row != n_bus; ++row) {
-            for (Idx col = 0; col != n_bus; ++col) {
-                Dense const block = covariance.block(row * N, col * N, N, N);
-                real_covariance.block(row * D, col * D, N, N) = block.real() / 2.0;
-                real_covariance.block(row * D, col * D + N, N, N) = -block.imag() / 2.0;
-                real_covariance.block(row * D + N, col * D, N, N) = block.imag() / 2.0;
-                real_covariance.block(row * D + N, col * D + N, N, N) = block.real() / 2.0;
-            }
-        }
-    } else {
-        real_covariance = covariance;
-    }
     auto const output_index = [](Idx branch, int side, int phase, int quantity) {
         return ((((branch * 2) + side) * phases) + phase) * n_branch_output + quantity;
     };
     auto const all_outputs = [&](Idx bus, int coordinate, double delta) {
-        auto shifted = u;
-        DoubleComplex value = phase_value(u[bus], coordinate % phases);
-        if constexpr (uses_complex_state) {
-            value += coordinate < phases ? DoubleComplex{delta, 0.0} : DoubleComplex{0.0, delta};
-        } else {
-            value *= coordinate < phases ? std::polar(1.0, delta) : DoubleComplex{1.0 + delta / std::abs(value)};
-        }
-        set_phase_value(shifted[bus], coordinate % phases, value);
+        auto const shifted = shifted_voltage<sym>(u, bus, coordinate, delta, uses_complex_state);
         auto const flow = y_bus.template calculate_branch_flow<BranchSolverOutput<sym>>(shifted);
         double const reference_angle = relative ? std::arg(phase_value(shifted[slack], 0)) : 0.0;
         Eigen::VectorXd result(output_index(n_branch, 0, 0, 0));
@@ -499,7 +523,8 @@ void check_branch_outputs(Workspace const& workspace, YBus<sym> const& y_bus, Co
             derivative.col(bus * D + coordinate) = difference / (2.0 * step);
         }
     }
-    Eigen::VectorXd const expected_branch = (derivative * real_covariance * derivative.transpose()).diagonal();
+    Eigen::VectorXd const expected_branch =
+        (derivative * real_covariance(covariance, N) * derivative.transpose()).diagonal();
 
     StateEstimationUQRequest request;
     for (Idx branch = 0; branch != n_branch; ++branch) {
@@ -525,6 +550,89 @@ void check_branch_outputs(Workspace const& workspace, YBus<sym> const& y_bus, Co
                     CHECK(values[quantity].raw_variance ==
                           RelativeTo{expected_branch(output_index(branch, side, phase, quantity)), 1e-6});
                 }
+            }
+        }
+    }
+}
+
+// Compare the nodal injections of the workspace with the dense inverse. Their derivatives come from central
+// differences of the injection equations. Their covariance is the dense one, except that a completed pair has the
+// value that its reported route gives.
+template <symmetry_tag sym, class Workspace, class Scalar>
+void check_injection_outputs(Workspace const& workspace, YBus<sym> const& y_bus, MeasuredValues<sym> const& measured,
+                             ComplexValueVector<sym> const& u,
+                             Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> const& covariance,
+                             Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> const& inverse, double alpha,
+                             bool mesh) {
+    using Dense = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
+    constexpr bool uses_complex_state = Eigen::NumTraits<Scalar>::IsComplex;
+    constexpr int phases = n_phase<sym>;
+    constexpr int N = uses_complex_state ? phases : 2 * phases;
+    constexpr int D = uses_complex_state ? 2 * N : N;
+    constexpr int size = 2 * N;
+    Idx const n_bus = y_bus.size();
+    StateEstimationUQRequest request;
+    request.injection = {{0, true, true}, {1, true, true}, {2, true, true}, {3, true, true}};
+    request.pair_diagnostics = true;
+    StateEstimationUQResult<sym> injection_result;
+    state_estimation_uq::injection_results(workspace, y_bus, measured, request, injection_result);
+    Eigen::MatrixXd effective_covariance = real_covariance(covariance, N);
+    Idx completed_behind_injections = 0;
+    for (auto const& pair : injection_result.pairs) {
+        if (pair.route == UQPairRoute::stored) {
+            continue;
+        }
+        ++completed_behind_injections;
+        Idx const j = pair.first_bus;
+        Idx const m = pair.second_bus;
+        Idx const k = pair.middle_bus;
+        REQUIRE(k >= 0);
+        Dense const path = inverse.block(j * size, k * size, size, size) *
+                           inverse.block(k * size, k * size, size, size).inverse() *
+                           inverse.block(k * size, m * size, size, size);
+        Dense const path_corner = alpha * path.topLeftCorner(N, N);
+        effective_covariance.block(j * D, m * D, D, D) = real_form(path_corner);
+        effective_covariance.block(m * D, j * D, D, D) = real_form(path_corner).transpose();
+    }
+    CHECK(completed_behind_injections == (mesh ? 1 : 3));
+    auto const injections = [&](Idx bus, int coordinate, double delta) {
+        auto const power =
+            y_bus.calculate_injection(shifted_voltage<sym>(u, bus, coordinate, delta, uses_complex_state));
+        Eigen::VectorXd result(2 * n_bus * phases);
+        for (Idx at = 0; at != n_bus; ++at) {
+            for (int phase = 0; phase != phases; ++phase) {
+                result(2 * ((at * phases) + phase)) = phase_value(power[at], phase).real();
+                result((2 * ((at * phases) + phase)) + 1) = phase_value(power[at], phase).imag();
+            }
+        }
+        return result;
+    };
+    constexpr double step = 1e-6;
+    Eigen::MatrixXd injection_derivative(2 * n_bus * phases, n_bus * D);
+    for (Idx bus = 0; bus != n_bus; ++bus) {
+        for (int coordinate = 0; coordinate != D; ++coordinate) {
+            injection_derivative.col(bus * D + coordinate) =
+                (injections(bus, coordinate, step) - injections(bus, coordinate, -step)) / (2.0 * step);
+        }
+    }
+    Eigen::VectorXd const expected_injection =
+        (injection_derivative * effective_covariance * injection_derivative.transpose()).diagonal();
+    REQUIRE(injection_result.injection.size() == static_cast<std::size_t>(n_bus));
+    for (Idx bus = 0; bus != n_bus; ++bus) {
+        CAPTURE(bus);
+        for (int phase = 0; phase != phases; ++phase) {
+            CAPTURE(phase);
+            std::array<UQPhaseValue, 2> const values{injection_result.injection[bus].active_power.phase[phase],
+                                                     injection_result.injection[bus].reactive_power.phase[phase]};
+            for (int quantity = 0; quantity != 2; ++quantity) {
+                CAPTURE(quantity);
+                double const expected = expected_injection((2 * ((bus * phases) + phase)) + quantity);
+                CHECK(values[quantity].raw_variance == RelativeTo{expected, 1e-6});
+                CHECK_FALSE(values[quantity].exact_zero_enforced);
+                // A pair completed along a path that is not a separator is an approximation. The covariance of
+                // the neighbourhood then need not be positive semidefinite, and a negative variance is invalid.
+                CHECK(values[quantity].raw_status ==
+                      (expected > 0.0 ? UQVarianceStatus::valid : UQVarianceStatus::invalid));
             }
         }
     }
@@ -601,8 +709,9 @@ void check_completed_pairs(Workspace const& workspace, MathModelTopology const& 
     CHECK(completed_pairs == (mesh ? 1 : 3));
 }
 
-// On the four-bus network above, compare the covariance entries, voltage variances, branch outputs and completed
-// pairs of the workspace, and the voltage variances that `Solver` reports, with a dense inverse of the augmented gain.
+// On the four-bus network above, compare the covariance entries, voltage variances, branch outputs, completed pairs
+// and nodal injections of the workspace, and the voltage variances that `Solver` reports, with a dense inverse of the
+// augmented gain.
 // With `relative` no angle is measured; `slack_voltage_sensor` then decides whether the virtual angle bus of NRSE is
 // the slack bus.
 template <class Gain, class Unknown, class Solver>
@@ -683,7 +792,10 @@ void check_against_dense_inverse(bool mesh, bool relative, Idx slack, bool slack
     // 5. The pairs off the LU sparsity pattern that the completion derives.
     check_completed_pairs(workspace, topo, u, inverse, alpha, mesh, tolerance);
 
-    // 6. The voltage variances of the estimator, which assembles and factorizes its own gain. The measurements
+    // 6. The nodal injections of the workspace.
+    check_injection_outputs(workspace, y_bus, measured, u, covariance, inverse, alpha, mesh);
+
+    // 7. The voltage variances of the estimator, which assembles and factorizes its own gain. The measurements
     // were computed from `u`, so `u` fits them with zero residual and the estimator converges to `u`. Without a
     // measured voltage angle, the estimator converges to `u` rotated so that the phase-a angle of the slack bus
     // is zero.
@@ -803,6 +915,30 @@ BranchVariance branch_sensitivity_variance(Solver& solver, YBus<sym> const& y_bu
                         result[quantity]((2 * branch) + side, phase) += difference * difference * weight;
                     }
                 }
+            }
+        }
+    });
+    return result;
+}
+
+// Variances of the nodal injections per bus (row) and phase (column): active power, then reactive power.
+using InjectionVariance = std::array<Eigen::ArrayXXd, 2>;
+
+template <symmetry_tag sym, class Solver>
+InjectionVariance injection_sensitivity_variance(Solver& solver, YBus<sym> const& y_bus,
+                                                 StateEstimationInput<sym> const& input,
+                                                 std::vector<MeasuredScalar<sym>> const& scalars) {
+    constexpr int phases = n_phase<sym>;
+    Idx const n_bus = y_bus.size();
+    InjectionVariance result;
+    result.fill(Eigen::ArrayXXd::Zero(n_bus, phases));
+    for_each_sensitivity(solver, y_bus, input, scalars, [&](auto const& plus, auto const& minus, double weight) {
+        for (Idx bus = 0; bus != n_bus; ++bus) {
+            for (int phase = 0; phase != phases; ++phase) {
+                DoubleComplex const difference =
+                    phase_value(plus.bus_injection[bus], phase) - phase_value(minus.bus_injection[bus], phase);
+                result[0](bus, phase) += difference.real() * difference.real() * weight;
+                result[1](bus, phase) += difference.imag() * difference.imag() * weight;
             }
         }
     });

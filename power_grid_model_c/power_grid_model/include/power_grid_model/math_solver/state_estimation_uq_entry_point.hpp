@@ -9,6 +9,7 @@
 #include "measured_values.hpp"
 #include "state_estimation_uq.hpp"
 #include "state_estimation_uq_branch.hpp"
+#include "state_estimation_uq_injection.hpp"
 #include "state_estimation_uq_voltage.hpp"
 #include "y_bus.hpp"
 
@@ -56,6 +57,19 @@ template <symmetry_tag sym> StateEstimationUQResult<sym> invalid_results(StateEs
             }
         }
     }
+    result.injection.resize(request.injection.size());
+    for (std::size_t index = 0; index != request.injection.size(); ++index) {
+        auto const& injection_request = request.injection[index];
+        auto& output = result.injection[index];
+        for (std::size_t phase = 0; phase != output.active_power.phase.size(); ++phase) {
+            if (injection_request.active_power) {
+                output.active_power.phase[phase].raw_status = UQVarianceStatus::invalid;
+            }
+            if (injection_request.reactive_power) {
+                output.reactive_power.phase[phase].raw_status = UQVarianceStatus::invalid;
+            }
+        }
+    }
     return result;
 }
 
@@ -73,6 +87,7 @@ calculate_results(YBus<typename Workspace::Symmetry> const& y_bus, std::vector<G
             y_bus, gain, measured_values.variance_normalization(), u, measured_values.has_angle(), factorization};
         auto result = calculate_voltage_uq_results(workspace, request);
         branch_results(workspace, y_bus, request, result);
+        injection_results(workspace, y_bus, measured_values, request, result);
         return result;
     } catch (SparseMatrixError const&) {
         return invalid_results<typename Workspace::Symmetry>(request);

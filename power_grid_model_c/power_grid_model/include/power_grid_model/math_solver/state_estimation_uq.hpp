@@ -32,10 +32,18 @@ struct BranchUQRequest {
     bool current_magnitude;
     bool current_angle;
 };
+struct InjectionUQRequest {
+    Idx bus;
+    bool active_power;
+    bool reactive_power;
+};
 struct StateEstimationUQRequest {
     std::vector<VoltageUQRequest> voltage;
     std::vector<BranchUQRequest> branch;
-    bool empty() const { return voltage.empty() && branch.empty(); }
+    std::vector<InjectionUQRequest> injection;
+    // Also report how the covariance of each pair of buses behind the injection results was obtained.
+    bool pair_diagnostics = false;
+    bool empty() const { return voltage.empty() && branch.empty() && injection.empty(); }
 };
 
 // Classification of a scalar variance computation:
@@ -53,6 +61,7 @@ enum class UQVarianceStatus : IntS { not_requested, valid, clipped_roundoff, inv
 // - Voltage magnitude: raw_variance and absolute_scale in p.u.^2, sigma in p.u.
 // - Voltage angle:     raw_variance and absolute_scale in rad^2, sigma in rad.
 // - Branch power and current magnitude in p.u., branch current angle in rad, at the requested side.
+// - Nodal power injection in p.u.
 // Angle uncertainty is expressed in the same reference frame as the state-estimation (SE) output:
 // - Absolute frame when the island has at least one prepared voltage-angle measurement.
 // - Otherwise relative to the phase-a angle of the slack bus. That angle itself has zero variance;
@@ -62,6 +71,9 @@ struct UQPhaseValue {
     double absolute_scale = std::numeric_limits<double>::quiet_NaN();
     double sigma = std::numeric_limits<double>::quiet_NaN();
     UQVarianceStatus raw_status = UQVarianceStatus::not_requested;
+    // Set for an injection at an exact zero-injection constraint. Its sigma is then 0, whatever the computed
+    // variance and its status are.
+    bool exact_zero_enforced = false;
 };
 template <symmetry_tag sym> struct UQValue {
     std::array<UQPhaseValue, is_symmetric_v<sym> ? 1 : 3> phase{};
@@ -71,6 +83,9 @@ template <symmetry_tag sym> struct VoltageUQResult {
 };
 template <symmetry_tag sym> struct BranchUQResult {
     UQValue<sym> active_power, reactive_power, current_magnitude, current_angle;
+};
+template <symmetry_tag sym> struct InjectionUQResult {
+    UQValue<sym> active_power, reactive_power;
 };
 
 // How the covariance of a pair of buses was obtained, see state_estimation_uq_completion.hpp.
@@ -86,10 +101,13 @@ struct UQPairDiagnostic {
 };
 
 // UQ results for one island.
-// voltage[k] and branch[k] answer the request rows voltage[k] and branch[k].
+// voltage[k], branch[k] and injection[k] answer the request rows of the same index.
+// With pair_diagnostics, pairs lists each pair of buses behind the injection results once.
 template <symmetry_tag sym> struct StateEstimationUQResult {
     std::vector<VoltageUQResult<sym>> voltage;
     std::vector<BranchUQResult<sym>> branch;
+    std::vector<InjectionUQResult<sym>> injection;
+    std::vector<UQPairDiagnostic> pairs;
 };
 
 // References to the caller's request and result for one island, passed through run_state_estimation().
@@ -114,6 +132,11 @@ template <symmetry_tag sym> void validate_context(StateEstimationUQContext<sym>*
         if (item.branch < 0 || item.branch >= n_branch ||
             (item.side != BranchSide::from && item.side != BranchSide::to)) {
             throw InvalidArguments{"Invalid branch uncertainty request"};
+        }
+    }
+    for (auto const& item : uq->request.injection) {
+        if (item.bus < 0 || item.bus >= n_bus) {
+            throw InvalidArguments{"Invalid injection uncertainty request"};
         }
     }
 }

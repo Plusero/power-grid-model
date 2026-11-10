@@ -8,7 +8,7 @@ SPDX-License-Identifier: MPL-2.0
 
 State estimation by default returns deterministic state estimates.
 The math solver can also report how uncertain that estimate is, with the variance of the voltage magnitude and voltage angle
-of requested buses, and of the power and current at requested branch sides.
+of requested buses, of the power and current at requested branch sides, and of the power injected at requested buses.
 This is available for [iterative linear](se-algorithms.md#iterative-linear-state-estimation) (ILSE) and
 [Newton-Raphson](se-algorithms.md#newton-raphson-state-estimation) (NRSE) state estimation, in symmetric and asymmetric
 calculations.
@@ -22,7 +22,7 @@ After the estimate has converged, the calculation takes three steps:
 
 1. Obtain the LU factors of the augmented matrix that state estimation solves.
 2. Compute the blocks of its inverse on the LU sparsity pattern. Their state part is the state covariance.
-3. Convert the covariance blocks of each requested bus or branch into the variances of its outputs.
+3. Convert the covariance blocks of each requested bus, branch or injection into the variances of its outputs.
 
 
 ## Augmented system
@@ -309,7 +309,6 @@ The selective inverse gives the blocks of $\bar{Z}$ on the LU sparsity pattern o
 Nodal injection uncertainty also needs the covariance of two buses $j$ and $m$ that are both neighbours of a third bus
 but not on that pattern.
 `CovarianceCompletion` provides the covariance of the rectangular voltages of such a pair.
-It has no caller until injection uncertainty is added.
 
 - **Augmented path.** For a common neighbour $k$ of $j$ and $m$ in the graph of $\bar{A}_{\mathrm{ps}}$,
   $\bar{Z}_{jm} \approx \bar{Z}_{jk} \bar{Z}_{kk}^{-1} \bar{Z}_{km}$ with the whole blocks, state coordinates and
@@ -336,12 +335,32 @@ The warning never changes a value or its validity.
 The covariances are those of the rectangular voltages without any angle reference, for both estimators.
 Injection power does not depend on the angle reference, so none is needed.
 
+## Nodal injection variances
+
+An injection request selects a bus.
+The power injected at bus $i$ is $S_i = U_i (\sum_k Y_{ik} U_k)^*$ over the bus itself and its neighbours $k$ in the
+admittance matrix.
+Its variance is $d\,C_w\,d^T$ over the rectangular voltages of all of them, with the same derivative as the branch
+power.
+Injection power does not depend on the angle reference.
+
+Two neighbours of $i$ need not be on the LU sparsity pattern; their covariance comes from the completion above.
+If it was obtained along a path that is not a separator, or by the mean path, it is an approximation, and the
+covariance of the neighbourhood need not be positive semidefinite.
+A variance that then comes out negative is reported invalid.
+On the three-phase meshed test network this happens for the two buses whose neighbours lie across the cycle.
+
+A bus with an exact zero-injection constraint (zero measured power with zero variance) reports $\sigma = 0$ with
+`exact_zero_enforced` set, while the computed variance and its status are kept.
+With `pair_diagnostics` requested, the result lists every pair of buses behind the injection results once, with its
+route.
+
 ## Request and result
 
 The request and the result are passed to `run_state_estimation` in an optional `StateEstimationUQContext`.
 A request lists buses by their index in the island and selects magnitude, angle or both.
 It can also list branch sides, by branch index and side, and select active power, reactive power, current magnitude
-and current angle.
+and current angle, and list buses for their injected active and reactive power.
 The result has one row per request entry, in request order, with one value per phase.
 It is written only after both the estimate and its uncertainty are complete.
 A bus or branch index out of range, or an unknown branch side, is rejected before solving, and a failed estimate

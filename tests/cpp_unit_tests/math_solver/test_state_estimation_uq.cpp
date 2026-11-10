@@ -234,6 +234,36 @@ TEST_CASE("UQ voltage outputs are invalid at a zero voltage") {
     SUBCASE("NRSE") { zero_voltage_outputs<NRGain, NRUnknown, 2>(); }
 }
 
+TEST_CASE("UQ exact zero injection reports zero and keeps the computed variance") {
+    // Three buses in a line with an identity state gain, which is not the gain of this network: the computed
+    // injection variance is positive although buses 0 and 1 have an exact zero-injection constraint.
+    auto const topo = topology(3, {{0, 1}, {1, 2}}, 2);
+    YBus<symmetric_t> const y_bus{topo, parameters<symmetric_t>(2)};
+    StateEstimationInput<symmetric_t> input;
+    input.source_status = {1};
+    MeasuredValues<symmetric_t> const measured{topo, input};
+    std::vector<ILGain> gain(y_bus.nnz_lu());
+    for (auto const diagonal : y_bus.lu_diag()) {
+        gain[diagonal](0, 0) = 1.0;
+        gain[diagonal](1, 1) = -1.0;
+    }
+    SparseCovarianceWorkspace<ILGain, ILUnknown> const workspace{y_bus, gain, 1.0, {1.0, 1.0, 1.0}, true};
+    StateEstimationUQRequest request;
+    request.injection = {{0, true, true}, {2, true, true}};
+    StateEstimationUQResult<symmetric_t> result;
+    injection_results(workspace, y_bus, measured, request, result);
+    REQUIRE(result.injection.size() == 2);
+    auto const& constrained = result.injection[0].active_power.phase[0];
+    CHECK(constrained.exact_zero_enforced);
+    CHECK(constrained.sigma == 0.0);
+    CHECK(constrained.raw_status == UQVarianceStatus::valid);
+    CHECK(constrained.raw_variance == RelativeTo{1.0, 1e-12});
+    // The slack bus has an unmeasured source.
+    auto const& free = result.injection[1].active_power.phase[0];
+    CHECK_FALSE(free.exact_zero_enforced);
+    CHECK(free.sigma == RelativeTo{1.0, 1e-12});
+}
+
 TEST_CASE_TEMPLATE("UQ on a two-bus network with an exact zero injection", Solver, IterativeLinearSESolver<symmetric_t>,
                    NewtonRaphsonSESolver<symmetric_t>) {
     constexpr double variance = 1e-4;
@@ -251,7 +281,8 @@ TEST_CASE_TEMPLATE("UQ on a two-bus network with an exact zero injection", Solve
     };
 
     SUBCASE("The variances follow from the one voltage sensor") {
-        // Bus 0 is tied to the slack bus by the exact zero injection, so its only information is the voltage sensor.
+        // Bus 0 is tied to the slack bus by the exact zero injection, so its only information is the voltage
+        // sensor.
         double const expected = Solver::is_NRSE_solver ? variance : variance / 2.0;
         // Relative tolerance. The expected values are exact, so only rounding separates them from the results.
         constexpr double rtol = 1e-12;
@@ -316,6 +347,31 @@ TEST_CASE_TEMPLATE("UQ on a two-bus network with an exact zero injection", Solve
         }
     }
 
+    SUBCASE("Injection rows leave the voltage rows unchanged and report the exact zero") {
+        // Bus 0 has an exact zero-injection constraint, bus 1 an unmeasured source.
+        StateEstimationUQRequest request;
+        request.voltage = {{0, true, true}, {1, false, true}};
+        auto injection_request = request;
+        injection_request.injection = {{0, true, true}, {1, true, false}};
+        for (bool const absolute : {false, true}) {
+            CAPTURE(absolute);
+            auto const voltage_only = run(absolute, request);
+            auto const with_injection = run(absolute, injection_request);
+            REQUIRE(with_injection.injection.size() == 2);
+            CHECK(with_injection.voltage[0].magnitude.phase[0].raw_variance ==
+                  voltage_only.voltage[0].magnitude.phase[0].raw_variance);
+            for (auto const* value :
+                 {&with_injection.injection[0].active_power, &with_injection.injection[0].reactive_power}) {
+                CHECK(value->phase[0].exact_zero_enforced);
+                CHECK(value->phase[0].sigma == 0.0);
+            }
+            CHECK_FALSE(with_injection.injection[1].active_power.phase[0].exact_zero_enforced);
+            CHECK(with_injection.injection[1].active_power.phase[0].raw_status != UQVarianceStatus::invalid);
+            CHECK(with_injection.injection[1].reactive_power.phase[0].raw_status == UQVarianceStatus::not_requested);
+            CHECK(with_injection.pairs.empty());
+        }
+    }
+
     SUBCASE("An empty request does no work") {
         // The result that the caller supplied stays empty.
         CHECK(run(true, StateEstimationUQRequest{}).voltage.empty());
@@ -346,6 +402,7 @@ TEST_CASE_TEMPLATE("UQ voltage variances against the estimator's measurement sen
         StateEstimationUQRequest request;
         request.voltage = {{0, true, true}, {1, true, true}};
         request.branch = {{0, BranchSide::from, true, true, true, true}, {0, BranchSide::to, true, true, true, true}};
+        request.injection = {{0, true, true}, {1, true, true}};
         auto const [estimate, result] = run_with_uq(solver, y_bus, measured.input, request, 1e-12, 500);
         // The measurements agree with one state, which the estimator therefore returns.
         auto const u = measured_branch_bus_voltages();
@@ -371,6 +428,21 @@ TEST_CASE_TEMPLATE("UQ voltage variances against the estimator's measurement sen
                 // (see the voltage limitation below); the dense reference covers its branch formulas.
                 if constexpr (Solver::is_NRSE_solver) {
                     CHECK(values[quantity].raw_variance == RelativeTo{branch_reference[quantity](side, 0), 1e-5});
+                }
+            }
+        }
+        REQUIRE(result.injection.size() == 2);
+        auto const injection_reference =
+            uq_test::injection_sensitivity_variance(solver, y_bus, measured.input, measured.scalars);
+        for (Idx bus = 0; bus != 2; ++bus) {
+            CAPTURE(bus);
+            std::array<UQPhaseValue, 2> const values{result.injection[bus].active_power.phase[0],
+                                                     result.injection[bus].reactive_power.phase[0]};
+            for (int quantity = 0; quantity != 2; ++quantity) {
+                CAPTURE(quantity);
+                CHECK(values[quantity].raw_status == UQVarianceStatus::valid);
+                if constexpr (Solver::is_NRSE_solver) {
+                    CHECK(values[quantity].raw_variance == RelativeTo{injection_reference[quantity](bus, 0), 1e-5});
                 }
             }
         }
@@ -435,6 +507,14 @@ TEST_CASE("UQ request bounds") {
     CHECK_THROWS_AS(validate_context(&context, n_bus, n_branch), InvalidArguments);
     request.branch = {{0, BranchSide::to, true, false, false, false}};
     CHECK_NOTHROW(validate_context(&context, n_bus, n_branch));
+    // An injection bus index below zero or at the bus count is rejected.
+    request = {};
+    for (Idx const bus : {Idx{-1}, n_bus}) {
+        request.injection = {{bus, true, false}};
+        CHECK_THROWS_AS(validate_context(&context, n_bus, n_branch), InvalidArguments);
+    }
+    request.injection = {{1, true, false}};
+    CHECK_NOTHROW(validate_context(&context, n_bus, n_branch));
 
     // The solver rejects an invalid request before it estimates, and the supplied result stays untouched.
     auto const topo = voltage_measurement_topology();
@@ -472,10 +552,15 @@ TEST_CASE_TEMPLATE("UQ factorization failure keeps the estimate and reports requ
         StateEstimationUQRequest request;
         request.voltage = {{0, true, true}, {1, false, false}};
         request.branch = {{0, BranchSide::to, true, false, true, false}};
+        request.injection = {{1, false, true}};
         auto const [enabled, result] = run_with_uq(solver, y_bus, input, request, 1e-12, 30);
         CHECK(enabled.u == ordinary.u);
         REQUIRE(result.voltage.size() == 2);
         REQUIRE(result.branch.size() == 1);
+        REQUIRE(result.injection.size() == 1);
+        CHECK(result.injection[0].reactive_power.phase[0].raw_status == UQVarianceStatus::invalid);
+        CHECK(std::isnan(result.injection[0].reactive_power.phase[0].sigma));
+        CHECK(result.injection[0].active_power.phase[0].raw_status == UQVarianceStatus::not_requested);
         for (auto const* value : {&result.voltage[0].magnitude.phase[0], &result.voltage[0].angle.phase[0]}) {
             CHECK(value->raw_status == UQVarianceStatus::invalid);
             CHECK(std::isnan(value->sigma));
