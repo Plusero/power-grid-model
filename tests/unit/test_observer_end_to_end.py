@@ -340,7 +340,8 @@ def check_family_reference(method, family, symmetric, injection=False):
     base = np.repeat(data[CT.node]["u_rated"] / (1.0 if symmetric else np.sqrt(3.0)), phases)
     if method == CM.iterative_linear:
         x = np.column_stack([u.real, u.imag]).ravel()
-        variance = np.repeat(sigma**2 / 2.0, 2)
+        # The complex voltage measurement of ILSE has twice the sensor variance.
+        variance = np.repeat(sigma**2, 2)
     else:
         x = np.column_stack([np.angle(u), abs(u)]).ravel()
         variance = np.column_stack([(sigma / base) ** 2, sigma**2]).ravel()
@@ -401,10 +402,11 @@ def test_voltage_observers_match_one_measurement_phase_units_and_preserve_estima
         np.testing.assert_array_equal(result[component], ordinary[component])
     voltage = result[CT.voltage_uncertainty_observer]
     sigma = data[CT.asym_voltage_sensor]["u_sigma"]
-    factor = 1 / np.sqrt(2) if method == CM.iterative_linear else 1.0
-    np.testing.assert_allclose(voltage["u_sigma"], np.broadcast_to((factor * sigma)[:, None], (2, 3)), rtol=1e-10)
+    # Both methods report the sensor sigma for the magnitude. ILSE gives the angle that sigma across the
+    # measured phasor; NRSE gives it the per-unit sigma in radians.
+    np.testing.assert_allclose(voltage["u_sigma"], np.broadcast_to(sigma[:, None], (2, 3)), rtol=1e-10)
     expected_angle = (
-        factor * sigma[:, None] / data[CT.asym_voltage_sensor]["u_measured"]
+        sigma[:, None] / data[CT.asym_voltage_sensor]["u_measured"]
         if method == CM.iterative_linear
         else np.broadcast_to((sigma / (data[CT.node]["u_rated"] / np.sqrt(3)))[:, None], (2, 3))
     )
@@ -479,9 +481,8 @@ def test_balanced_independent_phase_voltage_noise_maps_to_symmetric_positive_seq
         calculation_method=method,
         output_component_types=[CT.voltage_uncertainty_observer],
     )[CT.voltage_uncertainty_observer][0]
-    factor = 1 / np.sqrt(2) if method == CM.iterative_linear else 1.0
-    np.testing.assert_allclose(phase["u_sigma"], sigma * factor, rtol=1e-10)
-    np.testing.assert_allclose(phase["u_angle_sigma"], sigma * factor / phase_voltage, rtol=1e-10)
+    np.testing.assert_allclose(phase["u_sigma"], sigma, rtol=1e-10)
+    np.testing.assert_allclose(phase["u_angle_sigma"], sigma / phase_voltage, rtol=1e-10)
     # U1 = (Ua + a Ub + a^2 Uc)/3. Independent equal phase
     # radial/tangential variances sum with squared coefficient 1/9.
     mapped_line_voltage_sigma = np.sqrt(3) * np.sqrt(np.sum(phase["u_sigma"] ** 2) / 9)
@@ -989,8 +990,9 @@ def test_public_separator_exactness_and_augmented_path_approximation_against_den
     if method == CM.iterative_linear:
         # Frozen ILSE transforms P/Q to complex current with the documented
         # near-unit-voltage variance approximation; no nonlinear gain inverse.
+        # Its complex voltage measurement has twice the sensor variance.
         precision = (
-            np.diag(1.0 / voltage_variance)
+            np.diag(1.0 / (2.0 * voltage_variance))
             + admittance.conjugate().T @ np.diag(data[CT.node]["u_rated"] ** 2 / (2.0 * power_variance)) @ admittance
         )
         complex_covariance = np.linalg.inv(precision)
@@ -1000,7 +1002,7 @@ def test_public_separator_exactness_and_augmented_path_approximation_against_den
             y_pu = admittance * voltage_base[:, None] * voltage_base[None, :] / power_base
             augmented = np.block(
                 [
-                    [np.diag(alpha / voltage_variance_pu), y_pu.conjugate().T],
+                    [np.diag(alpha / (2.0 * voltage_variance_pu)), y_pu.conjugate().T],
                     [y_pu, -np.diag(2.0 * power_variance_pu / alpha)],
                 ]
             )
@@ -1112,7 +1114,7 @@ def test_relative_current_angles_include_slack_cross_covariance_against_dense_re
     power_variance = data[CT.sym_power_sensor]["power_sigma"] ** 2 / 2.0
     if method == CM.iterative_linear:
         precision = (
-            np.diag(1.0 / voltage_variance)
+            np.diag(1.0 / (2.0 * voltage_variance))
             + admittance.conjugate().T @ np.diag(data[CT.node]["u_rated"] ** 2 / (2.0 * power_variance)) @ admittance
         )
         covariance = rectangular_covariance(np.linalg.inv(precision))

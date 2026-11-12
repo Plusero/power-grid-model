@@ -224,6 +224,11 @@ $$
 The aggregated apparent power flow is considered as a single measurement, with variance
 $\sigma_S^2 = \sigma_P^2 + \sigma_Q^2$.
 
+A voltage measurement is likewise a single complex measurement.
+Its variance is $2\sigma_U^2$: the sensor variance $\sigma_U^2$ for the magnitude and the same variance for the component
+across the phasor, which at a voltage of 1 p.u. is the variance that
+[Newton-Raphson state estimation](#newton-raphson-state-estimation) gives to a measured angle.
+
 The assumption made in the linearization of measurements introduces a system error to the algorithm, because the phase
 shifts of bus voltages are ignored in the input measurement data.
 This error is corrected by applying an iterative approach to the linear WLS algorithm.

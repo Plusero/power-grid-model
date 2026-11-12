@@ -194,6 +194,15 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
         return ComplexDiagonalTensor<sym>{static_cast<ComplexValue<sym>>(RealValue<sym>{1.0} / value)};
     }
 
+    // Variance of the complex voltage measurement of a bus.
+    // The variance of a voltage sensor is that of its magnitude, and the Newton-Raphson state estimation gives a
+    // measured angle the same variance in per unit. At a voltage of 1 p.u. that is the variance of the component
+    // across the phasor. The complex measurement therefore has twice the sensor variance, in the same way as a
+    // power or current measurement has the sum of the variances of its two components.
+    static double complex_voltage_variance(MeasuredValues<sym> const& measured_value, Idx bus) {
+        return 2.0 * measured_value.voltage_var(bus);
+    }
+
     void prepare_matrix(YBus<sym> const& y_bus, MeasuredValues<sym> const& measured_value) {
         MathModelParam<sym> const& param = y_bus.math_model_param();
         IdxVector const& row_indptr = y_bus.row_indptr_lu();
@@ -216,7 +225,7 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                 if ((row == col) && measured_value.has_voltage(row)) {
                     // G += 1.0 / variance
                     // for 3x3 tensor, fill diagonal
-                    block.g() += ComplexTensor<sym>{1.0 / measured_value.voltage_var(row)};
+                    block.g() += ComplexTensor<sym>{1.0 / complex_voltage_variance(measured_value, row)};
                 }
                 // fill block with branch, shunt measurement
                 for (Idx element_idx = y_bus.y_bus_entry_indptr()[data_idx];
@@ -319,7 +328,7 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
             // fill block with voltage measurement
             if (measured_value.has_voltage(bus)) {
                 // eta += u / variance
-                rhs_block.eta() += u[bus] / measured_value.voltage_var(bus);
+                rhs_block.eta() += u[bus] / complex_voltage_variance(measured_value, bus);
             }
             // fill block with branch, shunt measurement, need to convert to current
             for (Idx element_idx = y_bus.y_bus_entry_indptr()[data_idx];

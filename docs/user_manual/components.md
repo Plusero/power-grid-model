@@ -872,9 +872,9 @@ another state-estimation method, raises an error, also when only `id` and `energ
 
 A sigma is the first-order standard deviation of the estimated quantity under the measurement model of the calculation
 method. It is not a confidence interval or a residual.
-`newton_raphson` uses the sensor variances as given. `iterative_linear` treats a voltage measurement as a complex phasor
-and divides its variance equally over the real and imaginary part, so its voltage variances are about half of what the
-sensor variances imply.
+`newton_raphson` uses the sensor variances as given. `iterative_linear` treats every measurement as a complex number
+whose error has the same variance in every direction, so the active and reactive part of a power, or the two components
+of a current, share one variance; see [uncertainty observers](uncertainty-observers.md#what-the-sigmas-represent).
 A node-injection sigma can rely on an approximated covariance between two neighbours of the node; such a value is
 neither exact nor an upper bound.
 Missing values are NaN and follow the existing serialization rules: compact output writes `null`, and default map

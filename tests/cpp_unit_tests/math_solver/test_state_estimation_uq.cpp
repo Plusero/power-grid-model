@@ -282,8 +282,8 @@ TEST_CASE_TEMPLATE("UQ on a two-bus network with an exact zero injection", Solve
 
     SUBCASE("The variances follow from the one voltage sensor") {
         // Bus 0 is tied to the slack bus by the exact zero injection, so its only information is the voltage
-        // sensor.
-        double const expected = Solver::is_NRSE_solver ? variance : variance / 2.0;
+        // sensor. Both estimators report the sensor variance for the magnitude, and for the measured angle.
+        double const expected = variance;
         // Relative tolerance. The expected values are exact, so only rounding separates them from the results.
         constexpr double rtol = 1e-12;
         StateEstimationUQRequest request;
@@ -425,7 +425,8 @@ TEST_CASE_TEMPLATE("UQ voltage variances against the estimator's measurement sen
                 CAPTURE(quantity);
                 CHECK(values[quantity].raw_status == UQVarianceStatus::valid);
                 // ILSE is not compared: its proper complex model does not reproduce the first-order variance
-                // (see the voltage limitation below); the dense reference covers its branch formulas.
+                // of each component (see the note on the voltages below); the dense reference covers its branch
+                // formulas.
                 if constexpr (Solver::is_NRSE_solver) {
                     CHECK(values[quantity].raw_variance == RelativeTo{branch_reference[quantity](side, 0), 1e-5});
                 }
@@ -463,17 +464,20 @@ TEST_CASE_TEMPLATE("UQ voltage variances against the estimator's measurement sen
                     CHECK(angle.raw_variance == RelativeTo{reference.angle(bus, 0), 1e-5});
                 }
             } else {
-                // ILSE treats each sensor variance as the total variance of a proper complex error. For a
-                // voltage sensor that variance belongs to the magnitude alone, so ILSE counts it half. With
-                // the voltage sensors of this network, ILSE reports 0.4 to 0.6 of the first-order variance.
-                // This will be revised later.
+                // ILSE models every measurement as a complex number with a proper error. Its complex voltage
+                // measurement has twice the sensor variance, so the magnitude gets the sensor variance. On this
+                // network ILSE then reports the first-order variance to within 10% for the magnitude and for a
+                // measured angle; the rest is the proper model of the current and power sensors.
+                // Without a measured angle the magnitude enters as a phasor along the estimated angle, which
+                // adds angle information that the sensor does not have: the angle relative to the reference is
+                // reported at 0.5 to 0.7 of the first-order variance.
                 double const magnitude_ratio = magnitude.raw_variance / reference.magnitude(bus, 0);
-                CHECK(magnitude_ratio > 0.4);
-                CHECK(magnitude_ratio < 0.6);
+                CHECK(magnitude_ratio > 0.9);
+                CHECK(magnitude_ratio < 1.1);
                 if (!reference_angle) {
                     double const angle_ratio = angle.raw_variance / reference.angle(bus, 0);
-                    CHECK(angle_ratio > 0.4);
-                    CHECK(angle_ratio < 0.6);
+                    CHECK(angle_ratio > (test_case.absolute ? 0.9 : 0.5));
+                    CHECK(angle_ratio < (test_case.absolute ? 1.1 : 0.7));
                 }
             }
         }

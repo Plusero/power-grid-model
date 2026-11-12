@@ -38,8 +38,9 @@ def test_public_voltage_observer_matches_independent_one_measurement_oracle(meth
     observer = result[CT.voltage_uncertainty_observer]
     assert observer["id"].tolist() == [100]
     assert observer["energized"].tolist() == [1]
-    # ILSE splits proper complex variance between radial/tangential axes; NRSE uses real polar variances.
-    expected_sigma = 2.0 / np.sqrt(2.0) if method == CalculationMethod.iterative_linear else 2.0
+    # ILSE gives its complex voltage measurement twice the sensor variance and splits it between the radial
+    # and tangential axes; NRSE uses real polar variances. Both report the sensor sigma at this 1 p.u. voltage.
+    expected_sigma = 2.0
     np.testing.assert_allclose(observer["u_sigma"], expected_sigma, rtol=1e-10)
     np.testing.assert_allclose(observer["u_angle_sigma"], expected_sigma / 100.0, rtol=1e-10)
 
@@ -155,7 +156,7 @@ def test_public_branch_observers_match_independent_physical_jacobian(method):
     # ILSE has proper rectangular deviations; NRSE reuses prepared voltage variance
     # for the real angle and per-unit magnitude rows, as the ordinary estimator does.
     variance = (
-        np.repeat(np.array([2.0, 3.0]) ** 2, 2) / 2.0
+        np.repeat(np.array([2.0, 3.0]) ** 2, 2)
         if method == CalculationMethod.iterative_linear
         else np.array([0.02, 2.0, 0.03, 3.0]) ** 2
     )

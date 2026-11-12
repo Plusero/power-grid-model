@@ -232,7 +232,8 @@ std::vector<Gain> augmented_gain(YBus<sym> const& y_bus, MeasuredValues<sym> con
             for (int phase = 0; phase != phases; ++phase) {
                 if (row == col) {
                     if constexpr (uses_complex_state) {
-                        block(phase, phase) = voltage_weight;
+                        // The complex voltage measurement of ILSE has twice the sensor variance.
+                        block(phase, phase) = voltage_weight / 2.0;
                         block(N + phase, N + phase) =
                             -(phase_value(p_variance, phase) + phase_value(q_variance, phase));
                     } else {

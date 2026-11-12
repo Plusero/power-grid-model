@@ -149,12 +149,19 @@ different sigmas for the same network.
   the test network their variance is too large by about twice the voltage
   sensor variance, and the variance of current angles by up to 15%. Magnitudes,
   power and injections are not affected.
-- `iterative_linear` treats a voltage measurement as a complex phasor and
-  divides its variance equally over the real and imaginary part, whereas the
-  sensor variance belongs to the magnitude alone. Its voltage variances are
-  therefore about half of the first-order propagation (0.4 to 0.6 of it on the
-  balanced test network), and its power and current variances lie between 0.4
-  and 1.1 of it, depending on the quantity.
+- `iterative_linear` treats every measurement as a complex number whose error
+  has the same variance in every direction of the complex plane. A voltage
+  measurement gets twice the sensor variance: the sensor variance for the
+  magnitude, as in `newton_raphson`, and the same variance across the phasor
+  for a measured angle, which is the `newton_raphson` angle variance at a
+  voltage of 1 p.u. On the balanced test network its voltage variances are
+  then within 10% of the first-order propagation when the angle is measured.
+  Two differences remain.
+  The active and reactive part of a power, or the two components of a current,
+  share one variance, so its power and current variances lie between 0.5 and
+  1.7 of the first-order propagation, depending on the quantity. And without a
+  measured voltage angle, the angle relative to the reference is reported at
+  0.5 to 0.7 of it.
 
 A node-injection sigma needs the covariance between every two neighbours of the
 node. Where the calculation does not provide it directly, it is derived through
