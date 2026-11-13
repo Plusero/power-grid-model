@@ -988,12 +988,14 @@ def test_public_separator_exactness_and_augmented_path_approximation_against_den
         return alpha * completed_raw[:state_size, :state_size]
 
     if method == CM.iterative_linear:
-        # Frozen ILSE transforms P/Q to complex current with the documented
-        # near-unit-voltage variance approximation; no nonlinear gain inverse.
-        # Its complex voltage measurement has twice the sensor variance.
+        # ILSE turns P/Q into a complex current at the voltage of the bus, here
+        # the measured magnitude, and divides the power variance by its square;
+        # no nonlinear gain inverse. Its complex voltage measurement has twice
+        # the sensor variance.
+        measured_magnitude = data[CT.sym_voltage_sensor]["u_measured"]
         precision = (
             np.diag(1.0 / (2.0 * voltage_variance))
-            + admittance.conjugate().T @ np.diag(data[CT.node]["u_rated"] ** 2 / (2.0 * power_variance)) @ admittance
+            + admittance.conjugate().T @ np.diag(measured_magnitude**2 / (2.0 * power_variance)) @ admittance
         )
         complex_covariance = np.linalg.inv(precision)
         exact = rectangular_covariance(complex_covariance)
@@ -1003,7 +1005,7 @@ def test_public_separator_exactness_and_augmented_path_approximation_against_den
             augmented = np.block(
                 [
                     [np.diag(alpha / (2.0 * voltage_variance_pu)), y_pu.conjugate().T],
-                    [y_pu, -np.diag(2.0 * power_variance_pu / alpha)],
+                    [y_pu, -np.diag(2.0 * power_variance_pu / alpha / (measured_magnitude / voltage_base) ** 2)],
                 ]
             )
             completed[0, 2] = reconstructed_state(augmented, 1)[0, 0] * voltage_base[0] * voltage_base[2]
@@ -1113,9 +1115,11 @@ def test_relative_current_angles_include_slack_cross_covariance_against_dense_re
     voltage_variance = data[CT.sym_voltage_sensor]["u_sigma"] ** 2
     power_variance = data[CT.sym_power_sensor]["power_sigma"] ** 2 / 2.0
     if method == CM.iterative_linear:
+        # The power variance is divided by the square of the measured voltage magnitude.
+        measured_magnitude = data[CT.sym_voltage_sensor]["u_measured"]
         precision = (
             np.diag(1.0 / (2.0 * voltage_variance))
-            + admittance.conjugate().T @ np.diag(data[CT.node]["u_rated"] ** 2 / (2.0 * power_variance)) @ admittance
+            + admittance.conjugate().T @ np.diag(measured_magnitude**2 / (2.0 * power_variance)) @ admittance
         )
         covariance = rectangular_covariance(np.linalg.inv(precision))
     else:

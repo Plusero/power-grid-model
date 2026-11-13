@@ -96,7 +96,8 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
           data_gain_(y_bus.nnz_lu()),
           x_rhs_(y_bus.size()),
           sparse_solver_{y_bus.row_indptr_lu(), y_bus.col_indices_lu(), y_bus.lu_diag()},
-          perm_(y_bus.size()) {}
+          perm_(y_bus.size()),
+          weight_voltage_(y_bus.size()) {}
 
     SolverOutput<sym> run_state_estimation(YBus<sym> const& y_bus, StateEstimationInput<sym> const& input,
                                            double err_tol, Idx max_iter, Logger& log,
@@ -118,12 +119,6 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
         auto const observability_result =
             observability::observability_check(measured_values, y_bus.math_topology(), y_bus.y_bus_structure());
 
-        // prepare matrix
-        sub_timer = Timer{log, LogEvent::prepare_matrix_including_prefactorization};
-        prepare_matrix(y_bus, measured_values);
-        // prefactorize
-        sparse_solver_.prefactorize(data_gain_, perm_, observability_result.use_perturbation());
-
         // initialize voltage with initial angle
         sub_timer = Timer{log, LogEvent::initialize_voltages}; // TODO(mgovers): make scoped subtimers
         RealValue<sym> const mean_angle_shift = measured_values.mean_angle_shift();
@@ -132,8 +127,16 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
             output.u[bus] = exp(1.0i * (mean_angle_shift + topo.phase_shift[bus]));
         }
 
+        // prepare matrix at the voltage magnitudes of the initial linearized voltages
+        sub_timer = Timer{log, LogEvent::prepare_matrix_including_prefactorization};
+        update_weight_voltage(linearize_measurements(output.u, measured_values));
+        prepare_matrix(y_bus, measured_values);
+        // prefactorize
+        sparse_solver_.prefactorize(data_gain_, perm_, observability_result.use_perturbation());
+
         // loop to iterate
         Idx num_iter = 0;
+        bool reweighted = false;
         while (max_dev > err_tol || num_iter == 0) {
             if (num_iter++ == max_iter) {
                 throw IterationDiverge{max_iter, max_dev, err_tol};
@@ -145,6 +148,19 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
             sparse_solver_.solve_with_prefactorized_matrix(data_gain_, perm_, x_rhs_, x_rhs_);
             sub_timer = Timer{log, LogEvent::iterate_unknown};
             max_dev = iterate_unknown(output.u, measured_values.has_angle());
+            // The power variances in the matrix depend on the voltage magnitudes. When the iteration has converged for
+            // the first time, the matrix is rebuilt and refactorized once at the converged magnitudes if these have
+            // moved, and the iteration continues. A second rebuild would change the weights only by the effect of the
+            // first one on the voltages, which is of second order.
+            if (max_dev <= err_tol && !reweighted) {
+                reweighted = true;
+                if (update_weight_voltage(linearize_measurements(output.u, measured_values)) > err_tol) {
+                    sub_timer = Timer{log, LogEvent::prepare_matrix_including_prefactorization};
+                    prepare_matrix(y_bus, measured_values);
+                    sparse_solver_.prefactorize(data_gain_, perm_, observability_result.use_perturbation());
+                    max_dev = std::numeric_limits<double>::max();
+                }
+            }
         }
 
         // calculate math result
@@ -152,7 +168,7 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
         detail::calculate_se_result<sym>(y_bus, measured_values, output);
 
         if (uq && !uq->request.empty()) {
-            // The gain matrix does not depend on the state, so its LU factors are reused.
+            // The gain matrix was last factorized at the converged voltage magnitudes, so its LU factors are reused.
             typename UQWorkspace::Factorization const factorization{sparse_solver_, perm_};
             uq->result = state_estimation_uq::calculate_results<UQWorkspace>(y_bus, data_gain_, measured_values,
                                                                              output.u, uq->request, &factorization);
@@ -189,6 +205,9 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
     // solver
     SparseLUSolver<ILSEGainBlock<sym>, ILSERhs<sym>, ILSEUnknown<sym>> sparse_solver_;
     SparseLUSolver<ILSEGainBlock<sym>, ILSERhs<sym>, ILSEUnknown<sym>>::BlockPermArray perm_;
+    // Voltage magnitude per bus at which the power variances of the gain matrix are converted to current variances,
+    // taken from the linearized voltage when the matrix was last built. The right-hand side uses the same values.
+    RealValueVector<sym> weight_voltage_;
 
     static auto diagonal_inverse(RealValue<sym> const& value) {
         return ComplexDiagonalTensor<sym>{static_cast<ComplexValue<sym>>(RealValue<sym>{1.0} / value)};
@@ -237,7 +256,7 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                         if (measured_value.has_shunt(obj)) {
                             // G += (-Ys)^H * (variance^-1) * (-Ys) // NOSONAR(S125)
                             auto const& shunt_power = measured_value.shunt_power(obj);
-                            auto const current = power_to_global_current_measurement(shunt_power);
+                            auto const current = power_to_global_current_measurement(shunt_power, row);
                             block.g() += dot(hermitian_transpose(param.shunt_param[obj]),
                                              diagonal_inverse(current.variance), param.shunt_param[obj]);
                         }
@@ -262,8 +281,10 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                             if (std::invoke(has_branch_power_[measured_side], measured_value, obj)) {
                                 auto const& branch_power =
                                     std::invoke(branch_power_[measured_side], measured_value, obj);
-                                add_branch_measurement(measured_side,
-                                                       power_to_global_current_measurement(branch_power));
+                                add_branch_measurement(
+                                    measured_side,
+                                    power_to_global_current_measurement(
+                                        branch_power, y_bus.math_topology().branch_bus_idx[obj][measured_side]));
                             }
                             if (std::invoke(has_branch_current_[measured_side], measured_value, obj)) {
                                 auto const& branch_current =
@@ -283,8 +304,8 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                     if (row == col) {
                         // assign variance to diagonal of 3x3 tensor, for asym
                         auto const& injection = measured_value.bus_injection(row);
-                        block.r() = ComplexTensor<sym>{
-                            static_cast<ComplexValue<sym>>(-power_to_global_current_measurement(injection).variance)};
+                        block.r() = ComplexTensor<sym>{static_cast<ComplexValue<sym>>(
+                            -power_to_global_current_measurement(injection, row).variance)};
                     }
                 }
                 // injection measurement not exist
@@ -339,7 +360,7 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                 if (type == YBusElementType::shunt) {
                     if (measured_value.has_shunt(obj)) {
                         PowerSensorCalcParam<sym> const& shunt_power = measured_value.shunt_power(obj);
-                        auto const current = power_to_global_current_measurement(shunt_power, u[bus]);
+                        auto const current = power_to_global_current_measurement(shunt_power, u[bus], bus);
                         // eta += (-Ys)^H * (variance^-1) * i_shunt
                         rhs_block.eta() -= dot(hermitian_transpose(param.shunt_param[obj]),
                                                diagonal_inverse(current.variance), current.value);
@@ -366,8 +387,8 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                         // has measurement
                         if (std::invoke(has_branch_power_[measured_side], measured_value, obj)) {
                             auto const& branch_power = std::invoke(branch_power_[measured_side], measured_value, obj);
-                            add_branch_measurement(measured_side,
-                                                   power_to_global_current_measurement(branch_power, u[measured_bus]));
+                            add_branch_measurement(measured_side, power_to_global_current_measurement(
+                                                                      branch_power, u[measured_bus], measured_bus));
                         }
                         if (std::invoke(has_branch_current_[measured_side], measured_value, obj)) {
                             auto const& branch_current =
@@ -380,7 +401,8 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
             }
             // fill block with injection measurement, need to convert to current
             if (measured_value.has_bus_injection(bus)) {
-                rhs_block.tau() = power_to_global_current_measurement(measured_value.bus_injection(bus), u[bus]).value;
+                rhs_block.tau() =
+                    power_to_global_current_measurement(measured_value.bus_injection(bus), u[bus], bus).value;
             }
         }
     }
@@ -421,29 +443,35 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
         return measured_values.combine_voltage_iteration_with_measurements(current_u);
     }
 
-    // The variance is not scaled as an approximation under the assumptions of:
-    // - linearization of obtaining the current from power measurements
-    // - voltages are ~1pu
-    // - power sensor variances are often an approximation dominated by heuristics in the first place
-    // See also https://github.com/PowerGridModel/power-grid-model/pull/951#issuecomment-2805154436
+    // Store the magnitudes of the linearized voltages `u` as the weight voltages and return their largest change.
+    double update_weight_voltage(ComplexValueVector<sym> const& u) {
+        double max_change = 0.0;
+        for (Idx bus = 0; bus != n_bus_; ++bus) {
+            RealValue<sym> const magnitude = cabs(u[bus]);
+            max_change = std::max(max_change, max_val(cabs(magnitude - weight_voltage_[bus])));
+            weight_voltage_[bus] = magnitude;
+        }
+        return max_change;
+    }
+
+    // A power S measured at a terminal of `bus` becomes the current I = (S / U)^* at the voltage U of that terminal.
+    // The variance of the current is that of the power divided by |U|^2, at the weight voltage of the bus, so that the
+    // matrix and the right-hand side use the same variances; the matrix is rebuilt when the weight voltages move (see
+    // run_state_estimation). The voltage itself is taken as exact in the conversion.
     IndependentComplexRandVar<sym>
     power_to_global_current_measurement(PowerSensorCalcParam<sym> const& power_measurement,
-                                        ComplexValue<sym> const& voltage) const {
-        auto measurement = static_cast<IndependentComplexRandVar<sym>>(power_measurement);
-        measurement.value = conj(measurement.value / voltage);
+                                        ComplexValue<sym> const& voltage, Idx bus) const {
+        auto measurement = power_to_global_current_measurement(power_measurement, bus);
+        measurement.value = conj(static_cast<IndependentComplexRandVar<sym>>(power_measurement).value / voltage);
         return measurement;
     }
 
-    // Overload when the voltage is not present: the value can't be determined, but the variance assumption still holds.
-    // The variance is not scaled as an approximation under the assumptions of:
-    // - linearization of obtaining the current from power measurements
-    // - voltages are ~1pu
-    // - power sensor variances are often an approximation dominated by heuristics in the first place
-    // See also https://github.com/PowerGridModel/power-grid-model/pull/951#issuecomment-2805154436
+    // Overload for the matrix, which needs the variance only: the value can't be determined without the voltage.
     IndependentComplexRandVar<sym>
-    power_to_global_current_measurement(PowerSensorCalcParam<sym> const& power_measurement) const {
+    power_to_global_current_measurement(PowerSensorCalcParam<sym> const& power_measurement, Idx bus) const {
         auto measurement = static_cast<IndependentComplexRandVar<sym>>(power_measurement);
         measurement.value = ComplexValue<sym>{nan};
+        measurement.variance = measurement.variance / (weight_voltage_[bus] * weight_voltage_[bus]);
         return measurement;
     }
 

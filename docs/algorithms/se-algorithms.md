@@ -223,6 +223,7 @@ $$
 
 The aggregated apparent power flow is considered as a single measurement, with variance
 $\sigma_S^2 = \sigma_P^2 + \sigma_Q^2$.
+Converted into a current at the voltage $\underline{U}$, its variance is $\sigma_S^2 / |\underline{U}|^2$.
 
 A voltage measurement is likewise a single complex measurement.
 Its variance is $2\sigma_U^2$: the sensor variance $\sigma_U^2$ for the magnitude and the same variance for the component
@@ -251,8 +252,10 @@ for the next iteration:
     See also [Matrix-prefactorization](../user_manual/performance-guide.md#matrix-prefactorization)
   - Normalize the voltage phasor angle by setting the angle of the slack bus to zero:
   - If the maximum deviation between $\underline{U}^{(k)}$ and $\underline{U}^{(k-1)}$ is smaller than the error
-    tolerance $\epsilon$, stop the iteration.
-    Otherwise, continue until the maximum number of iterations is reached.
+    tolerance $\epsilon$, stop the iteration, except the first time: then compare the magnitudes of the linearized
+    voltages with those at which the matrix was built, and if any differs by more than $\epsilon$, rebuild and
+    refactorize the matrix once at the new magnitudes and continue.
+    The iteration stops with an error when the maximum number of iterations is reached.
 
 In the iteration process, the phase angle of voltages at each bus is updated using the last iteration; the system error
 of the phase shift converges to zero.
@@ -260,20 +263,20 @@ Because the matrix is pre-built and pre-factorized, the computation cost of each
 [Newton-Raphson](#newton-raphson-state-estimation) method, where the Jacobian matrix needs to be constructed and
 factorized each time.
 
-Because the matrix depends on the variances of the linearized current measurements, pre-factorization requires assuming
-that the magnitudes of the voltages remain constant throughout the iteration process.
-This assumption is, of course, an approximation, and potentially results an inaccurate relative weighing of the power
-measurements.
-However, the difference between the solution and the actual grid state is usually small, because the error introduced by
-this is typically dominated by the following contributing factors (see also
-[this thread](https://github.com/PowerGridModel/power-grid-model/pull/951#issuecomment-2805154436)).
-
-- voltages in the distribution grid are usually close to 1 p.u..
-- power sensor errors are usually best-effort estimates.
-- the interpretation of power measurements as current measurements is an approximation.
+Because the matrix depends on the variances of the linearized current measurements, it is built at the voltage
+magnitudes of the initial linearized voltages and kept constant while the iteration runs.
+When the iteration has converged for the first time, the matrix is rebuilt and refactorized once at the converged
+magnitudes if these have moved by more than the error tolerance, and the iteration continues.
+The power measurements are therefore weighted at the voltage of the converged state, up to the change that this rebuild
+itself causes, at the cost of one additional factorization (see also
+[this thread](https://github.com/PowerGridModel/power-grid-model/pull/951#issuecomment-2805154436) for the earlier
+approximation, which kept the variances unscaled).
+The conversion itself takes the voltage as exact: the error of the voltage that turns a power into a current is not part
+of the variance of that current.
 
 ```{warning}
-In short, the pre-factorization may produce results that may deviate from the actual grid state.
+In short, the interpretation of power measurements as current measurements is an approximation, and the results may
+deviate from the actual grid state.
 If higher precision is desired, please consider using
 [Newton-Raphson state estimation](#newton-raphson-state-estimation) instead.
 ```

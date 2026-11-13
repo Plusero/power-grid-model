@@ -4,13 +4,5 @@
   "atol": {
     "default": 1e-5,
     ".+_residual": 0.15
-  },
-  "extra_params": {
-    "iterative_linear": {
-      "xfail": {
-        "raises": "AssertionError",
-        "reason": "With twice the sensor variance for the complex voltage measurement, iterative linear leaves a power residual of 0.21 W on these consistent measurements. The tolerance is 0.15 W and the residual was 0.09 W before."
-      }
-    }
   }
 }

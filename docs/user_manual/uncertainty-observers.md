@@ -162,6 +162,11 @@ different sigmas for the same network.
   1.7 of the first-order propagation, depending on the quantity. And without a
   measured voltage angle, the angle relative to the reference is reported at
   0.5 to 0.7 of it.
+  A power becomes a current at a voltage that is taken as exact, with the
+  power variance divided by the square of its magnitude. Where the power
+  sensors are accurate compared with the voltage sensors, the error of that
+  voltage dominates the currents, and the current and power variances deviate
+  most from the first-order propagation.
 
 A node-injection sigma needs the covariance between every two neighbours of the
 node. Where the calculation does not provide it directly, it is derived through

@@ -207,7 +207,8 @@ EstimateWithUQ<typename Solver::sym> run_with_uq(Solver& solver, YBus<typename S
 // The augmented gain [G, Q^H; Q, R] at state `u` for voltage and injection sensors, written out from its
 // definition instead of taken from a solver. G holds the voltage weights (for NRSE also on the angles that are
 // measured or virtual), Q the injection equations (Y for ILSE, the derivatives of the injection for NRSE), and
-// R the negated injection variances.
+// R the negated injection variances. ILSE turns an injection power into a current at the linearized voltage of its
+// bus and divides the variance by the squared magnitude of that voltage.
 template <symmetry_tag sym, class Gain>
 std::vector<Gain> augmented_gain(YBus<sym> const& y_bus, MeasuredValues<sym> const& measured,
                                  ComplexValueVector<sym> const& u, ComplexValueVector<sym> const& injection,
@@ -216,6 +217,7 @@ std::vector<Gain> augmented_gain(YBus<sym> const& y_bus, MeasuredValues<sym> con
     constexpr bool uses_complex_state = Eigen::NumTraits<typename Gain::Scalar>::IsComplex;
     constexpr int phases = n_phase<sym>;
     constexpr int N = Gain::RowsAtCompileTime / 2; // state coordinates per bus
+    ComplexValueVector<sym> const linearized = measured.combine_voltage_iteration_with_measurements(u);
     std::vector<Gain> blocks(y_bus.nnz_lu());
     for (Idx row = 0; row != y_bus.size(); ++row) {
         double const voltage_weight = measured.has_voltage(row) ? 1.0 / measured.voltage_var(row) : 0.0;
@@ -235,7 +237,8 @@ std::vector<Gain> augmented_gain(YBus<sym> const& y_bus, MeasuredValues<sym> con
                         // The complex voltage measurement of ILSE has twice the sensor variance.
                         block(phase, phase) = voltage_weight / 2.0;
                         block(N + phase, N + phase) =
-                            -(phase_value(p_variance, phase) + phase_value(q_variance, phase));
+                            -(phase_value(p_variance, phase) + phase_value(q_variance, phase)) /
+                            std::norm(phase_value(linearized[row], phase));
                     } else {
                         block(phase, phase) = (!relative || row == virtual_bus) ? voltage_weight : 0.0;
                         block(phases + phase, phases + phase) = voltage_weight;
