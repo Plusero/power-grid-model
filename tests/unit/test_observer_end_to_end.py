@@ -1426,3 +1426,97 @@ def test_loaded_ternary_observers_are_finite_without_changing_estimates(method):
         observer = result[CT.voltage_uncertainty_observer]
         np.testing.assert_allclose(observer["u_sigma"], magnitude_sigma, rtol=1e-7, atol=0.0)
         np.testing.assert_allclose(observer["u_angle_sigma"], angle_sigma, rtol=1e-7, atol=0.0)
+
+
+def power_weight_network(u_sigma, power_sigma):
+    """Three buses in a chain with the voltage phasor measured at bus 1 only and P/Q measured at the from-side of
+    line 10, the to-side of line 11, the shunt at bus 2 (a zero injection) and the load at bus 3, all consistent with a
+    power flow."""
+    base = {
+        CT.node: rows(CT.node, id=[1, 2, 3], u_rated=1e4),
+        CT.line: rows(
+            CT.line,
+            id=[10, 11],
+            from_node=[1, 2],
+            to_node=[2, 3],
+            from_status=1,
+            to_status=1,
+            r1=[3.0, 1.0],
+            x1=[6.0, 2.0],
+            c1=0.0,
+            tan1=0.0,
+            i_n=1e3,
+        ),
+        CT.source: rows(CT.source, id=20, node=1, status=1, u_ref=1.0),
+        CT.shunt: rows(CT.shunt, id=30, node=2, status=1, g1=1e-3, b1=-2e-4),
+        CT.sym_load: rows(
+            CT.sym_load, id=40, node=3, status=1, type=LoadGenType.const_power, p_specified=2e6, q_specified=6e5
+        ),
+    }
+    flow = PowerGridModel(base).calculate_power_flow(calculation_method=CM.newton_raphson, error_tolerance=1e-14)
+    measured = [
+        (10, MeasuredTerminalType.branch_from, flow[CT.line]["p_from"][0], flow[CT.line]["q_from"][0]),
+        (11, MeasuredTerminalType.branch_to, flow[CT.line]["p_to"][1], flow[CT.line]["q_to"][1]),
+        (30, MeasuredTerminalType.shunt, flow[CT.shunt]["p"][0], flow[CT.shunt]["q"][0]),
+        (40, MeasuredTerminalType.load, flow[CT.sym_load]["p"][0], flow[CT.sym_load]["q"][0]),
+    ]
+    data = dict(base)
+    data[CT.sym_voltage_sensor] = rows(
+        CT.sym_voltage_sensor,
+        id=50,
+        measured_object=1,
+        u_sigma=u_sigma,
+        u_measured=flow[CT.node]["u"][0],
+        u_angle_measured=flow[CT.node]["u_angle"][0],
+    )
+    data[CT.sym_power_sensor] = rows(
+        CT.sym_power_sensor,
+        id=[60, 61, 62, 63],
+        measured_object=[m[0] for m in measured],
+        measured_terminal_type=[m[1] for m in measured],
+        p_measured=[m[2] for m in measured],
+        q_measured=[m[3] for m in measured],
+        p_sigma=power_sigma,
+        q_sigma=power_sigma,
+    )
+    data[CT.voltage_uncertainty_observer] = rows(
+        CT.voltage_uncertainty_observer, id=[101, 102, 103], observed_object=[1, 2, 3], status=1
+    )
+    return data, flow
+
+
+@pytest.mark.parametrize(("u_sigma", "power_sigma"), [(100.0, 1e4), (1000.0, 2e3)])
+def test_iterative_linear_power_weights_follow_terminal_voltage_against_dense_reference(u_sigma, power_sigma):
+    """ILSE divides the variance of a power by the squared voltage magnitude of its terminal bus. With the inaccurate
+    voltage sensor its iteration first converges at a spurious state, and the uncertainty must still use the power
+    weights of the final state."""
+    data, flow = power_weight_network(u_sigma, power_sigma)
+    result = PowerGridModel(data).calculate_state_estimation(
+        calculation_method=CM.iterative_linear,
+        error_tolerance=1e-10,
+        max_iterations=200,
+        output_component_types=[CT.node, CT.voltage_uncertainty_observer],
+    )
+    magnitude = flow[CT.node]["u_pu"]
+    np.testing.assert_allclose(result[CT.node]["u_pu"], magnitude, rtol=1e-8)
+    # ILSE's augmented matrix in per unit (1 MVA): a power measurement is a current row of the admittances, with the
+    # sum of its P and Q variances divided by the squared voltage magnitude of its terminal bus.
+    u_rated, s_base = 1e4, 1e6
+    z_base = u_rated**2 / s_base
+    y_a, y_b, y_shunt = z_base / (3.0 + 6.0j), z_base / (1.0 + 2.0j), (1e-3 - 2e-4j) * z_base
+    admittance = np.array([[y_a, -y_a, 0], [-y_a, y_a + y_b + y_shunt, -y_b], [0, -y_b, y_b]])
+    power_variance = 2.0 * (power_sigma / s_base) ** 2
+    gain = np.zeros((3, 3), dtype=complex)
+    gain[0, 0] = 1.0 / (2.0 * (u_sigma / u_rated) ** 2)  # twice the sensor variance for the voltage phasor
+    for current_row, bus in [
+        (np.array([y_a, -y_a, 0]), 0),
+        (np.array([0, -y_b, y_b]), 2),
+        (np.array([0, -y_shunt, 0]), 1),
+    ]:
+        gain += np.outer(current_row.conj(), current_row) * magnitude[bus] ** 2 / power_variance
+    injection = np.zeros((3, 3), dtype=complex)
+    injection[1:] = admittance[1:]  # the zero injection at bus 2 and the load at bus 3
+    remainder = np.diag([-1.0, 0.0, -power_variance / magnitude[2] ** 2]).astype(complex)
+    covariance = np.linalg.inv(np.block([[gain, injection.conj().T], [injection, remainder]]))[:3, :3]
+    expected = np.sqrt(np.real(np.diag(covariance)) / 2.0) * u_rated
+    np.testing.assert_allclose(result[CT.voltage_uncertainty_observer]["u_sigma"], expected, rtol=1e-8)

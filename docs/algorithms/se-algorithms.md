@@ -253,9 +253,10 @@ for the next iteration:
   - Normalize the voltage phasor angle by setting the angle of the slack bus to zero:
   - If the maximum deviation between $\underline{U}^{(k)}$ and $\underline{U}^{(k-1)}$ is smaller than the error
     tolerance $\epsilon$, stop the iteration, except the first time: then compare the magnitudes of the linearized
-    voltages with those at which the matrix was built, and if any differs by more than $\epsilon$, rebuild and
-    refactorize the matrix once at the new magnitudes and continue.
-    The iteration stops with an error when the maximum number of iterations is reached.
+    voltages with those at which the matrix was built, at the buses whose voltage converts a power measurement, and if
+    any differs by more than 0.1%, rebuild and refactorize the matrix at the new magnitudes and continue.
+    The iteration stops with an error when the maximum number of iterations is reached; the iterations after the rebuild
+    count towards it.
 
 In the iteration process, the phase angle of voltages at each bus is updated using the last iteration; the system error
 of the phase shift converges to zero.
@@ -265,10 +266,13 @@ factorized each time.
 
 Because the matrix depends on the variances of the linearized current measurements, it is built at the voltage
 magnitudes of the initial linearized voltages and kept constant while the iteration runs.
-When the iteration has converged for the first time, the matrix is rebuilt and refactorized once at the converged
-magnitudes if these have moved by more than the error tolerance, and the iteration continues.
-The power measurements are therefore weighted at the voltage of the converged state, up to the change that this rebuild
-itself causes, at the cost of one additional factorization (see also
+When the iteration has converged for the first time, the matrix is rebuilt and refactorized at the converged magnitudes
+if these differ from those of the matrix by more than 0.1%, and the iteration continues.
+The power measurements are therefore weighted at the voltage of the converged state, usually at the cost of one
+additional factorization.
+If the iteration then moves the magnitudes by more than 0.1% again, which happens only in badly conditioned cases, the
+matrix is rebuilt once more for the [uncertainty observers](../user_manual/uncertainty-observers.md), so that their
+variances always use the power weights of the final state (see also
 [this thread](https://github.com/PowerGridModel/power-grid-model/pull/951#issuecomment-2805154436) for the earlier
 approximation, which kept the variances unscaled).
 The conversion itself takes the voltage as exact: the error of the voltage that turns a power into a current is not part

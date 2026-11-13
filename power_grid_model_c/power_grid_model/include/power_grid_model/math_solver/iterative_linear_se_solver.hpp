@@ -97,7 +97,8 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
           x_rhs_(y_bus.size()),
           sparse_solver_{y_bus.row_indptr_lu(), y_bus.col_indices_lu(), y_bus.lu_diag()},
           perm_(y_bus.size()),
-          weight_voltage_(y_bus.size()) {}
+          weight_voltage_(y_bus.size()),
+          uses_weight_voltage_(y_bus.size()) {}
 
     SolverOutput<sym> run_state_estimation(YBus<sym> const& y_bus, StateEstimationInput<sym> const& input,
                                            double err_tol, Idx max_iter, Logger& log,
@@ -129,15 +130,16 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
 
         // prepare matrix at the voltage magnitudes of the initial linearized voltages
         sub_timer = Timer{log, LogEvent::prepare_matrix_including_prefactorization};
-        update_weight_voltage(linearize_measurements(output.u, measured_values));
+        set_weight_voltage(linearize_measurements(output.u, measured_values));
         prepare_matrix(y_bus, measured_values);
         // prefactorize
         sparse_solver_.prefactorize(data_gain_, perm_, observability_result.use_perturbation());
 
-        // loop to iterate
+        // loop to iterate; iterations after the rebuild count towards max_iter
         Idx num_iter = 0;
+        bool rebuilt = false;
         bool reweighted = false;
-        while (max_dev > err_tol || num_iter == 0) {
+        while (max_dev > err_tol || rebuilt || num_iter == 0) {
             if (num_iter++ == max_iter) {
                 throw IterationDiverge{max_iter, max_dev, err_tol};
             }
@@ -149,16 +151,19 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
             sub_timer = Timer{log, LogEvent::iterate_unknown};
             max_dev = iterate_unknown(output.u, measured_values.has_angle());
             // The power variances in the matrix depend on the voltage magnitudes. When the iteration has converged for
-            // the first time, the matrix is rebuilt and refactorized once at the converged magnitudes if these have
-            // moved, and the iteration continues. A second rebuild would change the weights only by the effect of the
-            // first one on the voltages, which is of second order.
-            if (max_dev <= err_tol && !reweighted) {
+            // the first time, the matrix is rebuilt and refactorized at the converged magnitudes if these differ from
+            // those of the matrix by more than weight_voltage_tolerance, and the iteration continues. Rebuilding at
+            // every convergence can make the iteration alternate between states in badly conditioned cases, so the
+            // uncertainty calculation below checks the weights of the final state instead. There is no rebuild when no
+            // further iteration is allowed, as in the single-iteration cache run of a batch.
+            rebuilt = false;
+            if (max_dev <= err_tol && !reweighted && num_iter < max_iter) {
                 reweighted = true;
-                if (update_weight_voltage(linearize_measurements(output.u, measured_values)) > err_tol) {
+                auto const linearized_u = linearize_measurements(output.u, measured_values);
+                if (weight_voltage_change(linearized_u) > weight_voltage_tolerance) {
                     sub_timer = Timer{log, LogEvent::prepare_matrix_including_prefactorization};
-                    prepare_matrix(y_bus, measured_values);
-                    sparse_solver_.prefactorize(data_gain_, perm_, observability_result.use_perturbation());
-                    max_dev = std::numeric_limits<double>::max();
+                    rebuild_matrix(y_bus, measured_values, linearized_u, observability_result.use_perturbation());
+                    rebuilt = true;
                 }
             }
         }
@@ -168,7 +173,14 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
         detail::calculate_se_result<sym>(y_bus, measured_values, output);
 
         if (uq && !uq->request.empty()) {
-            // The gain matrix was last factorized at the converged voltage magnitudes, so its LU factors are reused.
+            // The uncertainty uses power weights at the final voltages: if the iteration has moved them by more than
+            // weight_voltage_tolerance since the matrix was built, it is rebuilt once more. Otherwise its LU factors
+            // are reused.
+            auto const linearized_u = linearize_measurements(output.u, measured_values);
+            if (weight_voltage_change(linearized_u) > weight_voltage_tolerance) {
+                sub_timer = Timer{log, LogEvent::prepare_matrix_including_prefactorization};
+                rebuild_matrix(y_bus, measured_values, linearized_u, observability_result.use_perturbation());
+            }
             typename UQWorkspace::Factorization const factorization{sparse_solver_, perm_};
             uq->result = state_estimation_uq::calculate_results<UQWorkspace>(y_bus, data_gain_, measured_values,
                                                                              output.u, uq->request, &factorization);
@@ -208,6 +220,12 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
     // Voltage magnitude per bus at which the power variances of the gain matrix are converted to current variances,
     // taken from the linearized voltage when the matrix was last built. The right-hand side uses the same values.
     RealValueVector<sym> weight_voltage_;
+    // Whether a power measurement uses the weight voltage of a bus, set when the matrix is built.
+    std::vector<char> uses_weight_voltage_;
+    // Relative change of a used weight voltage beyond which the matrix is rebuilt. It changes the power weights by
+    // about twice as much: far above round-off, also in badly conditioned systems, and far below the accuracy of sensor
+    // variances.
+    static constexpr double weight_voltage_tolerance = 1e-3;
 
     static auto diagonal_inverse(RealValue<sym> const& value) {
         return ComplexDiagonalTensor<sym>{static_cast<ComplexValue<sym>>(RealValue<sym>{1.0} / value)};
@@ -226,6 +244,7 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
         MathModelParam<sym> const& param = y_bus.math_model_param();
         IdxVector const& row_indptr = y_bus.row_indptr_lu();
         IdxVector const& col_indices = y_bus.col_indices_lu();
+        std::ranges::fill(uses_weight_voltage_, char{0});
 
         // loop data index, all rows and columns
         for (Idx row = 0; row != n_bus_; ++row) {
@@ -257,6 +276,7 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                             // G += (-Ys)^H * (variance^-1) * (-Ys) // NOSONAR(S125)
                             auto const& shunt_power = measured_value.shunt_power(obj);
                             auto const current = power_to_global_current_measurement(shunt_power, row);
+                            uses_weight_voltage_[row] = 1;
                             block.g() += dot(hermitian_transpose(param.shunt_param[obj]),
                                              diagonal_inverse(current.variance), param.shunt_param[obj]);
                         }
@@ -281,10 +301,10 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                             if (std::invoke(has_branch_power_[measured_side], measured_value, obj)) {
                                 auto const& branch_power =
                                     std::invoke(branch_power_[measured_side], measured_value, obj);
-                                add_branch_measurement(
-                                    measured_side,
-                                    power_to_global_current_measurement(
-                                        branch_power, y_bus.math_topology().branch_bus_idx[obj][measured_side]));
+                                Idx const measured_bus = y_bus.math_topology().branch_bus_idx[obj][measured_side];
+                                uses_weight_voltage_[measured_bus] = 1;
+                                add_branch_measurement(measured_side,
+                                                       power_to_global_current_measurement(branch_power, measured_bus));
                             }
                             if (std::invoke(has_branch_current_[measured_side], measured_value, obj)) {
                                 auto const& branch_current =
@@ -304,6 +324,7 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
                     if (row == col) {
                         // assign variance to diagonal of 3x3 tensor, for asym
                         auto const& injection = measured_value.bus_injection(row);
+                        uses_weight_voltage_[row] = 1;
                         block.r() = ComplexTensor<sym>{static_cast<ComplexValue<sym>>(
                             -power_to_global_current_measurement(injection, row).variance)};
                     }
@@ -443,13 +464,30 @@ template <symmetry_tag sym_type> class IterativeLinearSESolver {
         return measured_values.combine_voltage_iteration_with_measurements(current_u);
     }
 
-    // Store the magnitudes of the linearized voltages `u` as the weight voltages and return their largest change.
-    double update_weight_voltage(ComplexValueVector<sym> const& u) {
+    // Store the magnitudes of the linearized voltages `u` as the weight voltages.
+    void set_weight_voltage(ComplexValueVector<sym> const& u) {
+        for (Idx bus = 0; bus != n_bus_; ++bus) {
+            weight_voltage_[bus] = cabs(u[bus]);
+        }
+    }
+
+    // Rebuild and refactorize the matrix at the magnitudes of the linearized voltages `u`.
+    void rebuild_matrix(YBus<sym> const& y_bus, MeasuredValues<sym> const& measured_values,
+                        ComplexValueVector<sym> const& u, bool use_perturbation) {
+        set_weight_voltage(u);
+        prepare_matrix(y_bus, measured_values);
+        sparse_solver_.prefactorize(data_gain_, perm_, use_perturbation);
+    }
+
+    // Largest relative change of the magnitudes of the linearized voltages `u` against the weight voltages, over the
+    // buses whose weight voltage a power measurement uses.
+    double weight_voltage_change(ComplexValueVector<sym> const& u) const {
         double max_change = 0.0;
         for (Idx bus = 0; bus != n_bus_; ++bus) {
-            RealValue<sym> const magnitude = cabs(u[bus]);
-            max_change = std::max(max_change, max_val(cabs(magnitude - weight_voltage_[bus])));
-            weight_voltage_[bus] = magnitude;
+            if (uses_weight_voltage_[bus] != 0) {
+                max_change =
+                    std::max(max_change, max_val(cabs(cabs(u[bus]) / weight_voltage_[bus] - RealValue<sym>{1.0})));
+            }
         }
         return max_change;
     }
